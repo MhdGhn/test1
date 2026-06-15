@@ -1,0 +1,111 @@
+================================================================
+  SAP PGI AUTOMATION - EXCEL SETUP INSTRUCTIONS
+================================================================
+
+STEP 1: CREATE THE EXCEL FILE
+----------------------------------------------------------------
+1. Open Excel (new blank workbook)
+2. Rename "Sheet1" to "Deliveries"
+3. Save the file as: SAP_PGI_Tool.xlsm
+   (IMPORTANT: must be .xlsm format to allow macros)
+
+
+STEP 2: SET UP THE HEADER ROW
+----------------------------------------------------------------
+In the "Deliveries" sheet, type these headers in Row 1:
+
+  A1 = Delivery Number
+  B1 = Tracking Number
+  C1 = Category
+  D1 = Status
+
+Format Row 1 however you like (bold, background color, etc.)
+Freeze Row 1: View > Freeze Panes > Freeze Top Row
+
+
+STEP 3: ADD THE VBA CODE
+----------------------------------------------------------------
+1. Press ALT + F11 to open the VBA Editor
+2. In the left panel, right-click on "VBAProject (SAP_PGI_Tool.xlsm)"
+3. Click: Insert > Module
+4. A blank module window opens on the right
+5. Open the file "SAP_PGI_Automation.bas" in Notepad
+6. Select ALL the text (Ctrl+A), Copy (Ctrl+C)
+7. Click inside the blank VBA module window and Paste (Ctrl+V)
+8. Press Ctrl+S to save
+9. Close the VBA Editor (ALT+F4 or just X button)
+
+
+STEP 4: ADD THE BUTTONS TO EXCEL
+----------------------------------------------------------------
+A) RESET BUTTON:
+   1. Go to Developer tab > Insert > Button (Form Control)
+      (If no Developer tab: File > Options > Customize Ribbon > check Developer)
+   2. Draw a button on the sheet (anywhere convenient, e.g. top right area)
+   3. When "Assign Macro" dialog appears, select "ResetDeliveries" > OK
+   4. Right-click the button > Edit Text > type: RESET DELIVERIES
+
+B) RUN PGI BUTTON:
+   1. Developer tab > Insert > Button (Form Control)
+   2. Draw another button next to the Reset button
+   3. Assign Macro: select "RunPGI" > OK
+   4. Right-click > Edit Text > type: RUN PGI (Parts & Conversion)
+
+
+STEP 5: ENABLE SAP GUI SCRIPTING (if not already done)
+----------------------------------------------------------------
+In SAP GUI:
+1. Go to: Help > Settings
+2. Click the "Scripting" tab
+3. Check: "Enable Scripting"
+4. Uncheck: "Notify when a script attaches to SAP GUI"  (optional, reduces popups)
+5. Click OK
+
+If you don't see this option, your IT/BASIS team needs to enable it
+on the SAP server side (parameter: sapgui/user_scripting = TRUE)
+
+
+STEP 6: HOW TO USE DAILY
+----------------------------------------------------------------
+1. Open SAP GUI and log in (keep it open)
+2. Open SAP_PGI_Tool.xlsm
+3. Enter your deliveries:
+   - Column A: Delivery Number (e.g. 1234567890)
+   - Column B: Tracking Number (e.g. 1Z999AA10123456784)
+   - Column C: Category - type exactly one of:
+               PARTS
+               CONVERSION
+               MACHINE   (will be skipped for now, processed separately)
+4. Click "RUN PGI (Parts & Conversion)"
+5. Confirm the popup and watch it run
+6. Check Column D for results:
+   - Green "Done - PGI Posted"     = successful
+   - Red   "ERROR - Check Manually" = something went wrong, check that delivery in SAP
+   - Yellow "Pending - Machine"     = machine delivery, processed separately
+7. Next day: click "RESET DELIVERIES" to start fresh
+
+
+================================================================
+  IMPORTANT: SAP FIELD ID CALIBRATION (READ THIS!)
+================================================================
+
+The VBA code uses SAP field IDs that are common defaults for VL02N.
+These IDs can vary depending on your SAP version and configuration.
+If the macro fails, you need to find the exact IDs for your system.
+
+HOW TO RECORD SAP FIELD IDs:
+1. In SAP GUI, go to: Help > Settings > Scripting tab
+2. Check "Record and playback"
+3. Click the red Record button (circle) in the SAP toolbar
+4. Choose a save location for the script file
+5. Manually do ONE delivery in VL02N (open VL02N, enter delivery,
+   go to header, go to shipment tab, enter tracking, click PGI)
+6. Stop recording
+7. Open the recorded .vbs file in Notepad
+8. Look for lines like: session.findById("wnd[0]/usr/...").Text = ...
+9. Copy those exact IDs into the VBA module (lines marked with NOTE:)
+
+Lines in the VBA that may need adjustment are marked with:
+   ' NOTE: Record a SAP script to verify the correct ID
+
+================================================================
