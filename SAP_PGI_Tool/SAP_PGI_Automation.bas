@@ -163,26 +163,21 @@ Private Function ProcessSingleDelivery(sapSession As Object, _
         GoTo HandleError
     End If
 
-    ' 4. Click "Header" menu to open Header Details
-    '    In VL02N: Menu path is Edit > Header... OR toolbar button
-    '    NOTE: If this line fails, record a SAP script to find the correct ID
-    sapSession.findById("wnd[0]/mbar/menu[1]/menu[0]").Select   ' Edit > Header
+    ' 4. Click Header Details toolbar button
+    sapSession.findById("wnd[0]/tbar[1]/btn[8]").press
     SAPWait WAIT_SHORT
 
-    ' 5. Click on Shipment tab
-    '    NOTE: Tab ID may differ in your system - record to verify
-    sapSession.findById("wnd[0]/usr/tabsTABSHEAD/tabpTABSH").Select
+    ' 5. Enter tracking number in BilOfLad field on Shipment tab
+    sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\04/" & _
+                        "ssubSUBSCREEN_BODY:SAPMV50A:2108/txtLIKP-BOLNR").Text = tracking
     SAPWait WAIT_SHORT
 
-    ' 6. Enter tracking number in Bill of Lading field
-    sapSession.findById("wnd[0]/usr/tabsTABSHEAD/tabpTABSH/" & _
-                        "ssubSUBTABSHEAD:SAPMV50A:1112/ctxtLIKP-BOLNR").Text = tracking
+    ' 6. Press Enter to confirm
+    sapSession.findById("wnd[0]").sendVKey 0
     SAPWait WAIT_SHORT
 
     ' 7. Click Post Goods Issue button
-    '    Try toolbar button first (btn[8] is common for PGI in VL02N)
-    '    NOTE: Record a SAP script to confirm the correct button ID
-    sapSession.findById("wnd[0]/tbar[1]/btn[8]").press
+    sapSession.findById("wnd[0]/tbar[1]/btn[20]").press
     SAPWait WAIT_MEDIUM
 
     ' 8. Check status bar for success
