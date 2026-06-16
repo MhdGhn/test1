@@ -1,22 +1,19 @@
 Attribute VB_Name = "SAP_PGI_Automation"
 Option Explicit
 
-' ============================================================
-'  CONSTANTS - Adjust these if your SAP screen layout differs
-' ============================================================
 Private Const SHEET_NAME        As String = "Deliveries"
 Private Const COL_DELIVERY      As Integer = 1   ' Column A
 Private Const COL_TRACKING      As Integer = 2   ' Column B
 Private Const COL_CATEGORY      As Integer = 3   ' Column C
 Private Const COL_STATUS        As Integer = 4   ' Column D
-Private Const DATA_START_ROW    As Integer = 2   ' Row 2 (row 1 = headers)
+Private Const COL_QUANTITY      As Integer = 5   ' Column E (machines only)
+Private Const DATA_START_ROW    As Integer = 2
 
-' SAP screen wait times (milliseconds)
-Private Const WAIT_SHORT        As Long = 1500
-Private Const WAIT_MEDIUM       As Long = 2500
+Private Const WAIT_SHORT        As Long = 500
+Private Const WAIT_MEDIUM       As Long = 800
 
 ' ============================================================
-'  RESET BUTTON - Clears all delivery data, keeps headers
+'  RESET BUTTON
 ' ============================================================
 Public Sub ResetDeliveries()
     Dim ws      As Worksheet
@@ -26,15 +23,14 @@ Public Sub ResetDeliveries()
     answer = MsgBox("This will delete ALL delivery and tracking numbers." & vbNewLine & _
                     "Are you sure you want to reset?", _
                     vbYesNo + vbQuestion, "Reset Confirmation")
-
     If answer = vbNo Then Exit Sub
 
     Set ws = ThisWorkbook.Sheets(SHEET_NAME)
     lastRow = ws.Cells(ws.Rows.Count, COL_DELIVERY).End(xlUp).Row
 
     If lastRow >= DATA_START_ROW Then
-        ws.Range("A" & DATA_START_ROW & ":D" & lastRow).ClearContents
-        ws.Range("A" & DATA_START_ROW & ":D" & lastRow).Interior.ColorIndex = xlNone
+        ws.Range("A" & DATA_START_ROW & ":E" & lastRow).ClearContents
+        ws.Range("A" & DATA_START_ROW & ":E" & lastRow).Interior.ColorIndex = xlNone
     End If
 
     ws.Cells(DATA_START_ROW, COL_DELIVERY).Select
@@ -42,82 +38,56 @@ Public Sub ResetDeliveries()
 End Sub
 
 ' ============================================================
-'  MAIN PGI BUTTON - Processes all Parts & Conversion rows
+'  RUN PGI - Parts & Conversion only
 ' ============================================================
 Public Sub RunPGI()
-    Dim ws          As Worksheet
-    Dim sapSession  As Object
-    Dim lastRow     As Long
-    Dim i           As Long
-    Dim delivery    As String
-    Dim tracking    As String
-    Dim category    As String
-    Dim doneCount   As Integer
-    Dim errorCount  As Integer
-    Dim skipCount   As Integer
+    Dim ws         As Worksheet
+    Dim sapSession As Object
+    Dim lastRow    As Long
+    Dim i          As Long
+    Dim delivery   As String
+    Dim tracking   As String
+    Dim category   As String
+    Dim doneCount  As Integer
+    Dim errorCount As Integer
+    Dim skipCount  As Integer
 
     Set ws = ThisWorkbook.Sheets(SHEET_NAME)
     lastRow = ws.Cells(ws.Rows.Count, COL_DELIVERY).End(xlUp).Row
 
     If lastRow < DATA_START_ROW Then
-        MsgBox "No deliveries found. Please enter delivery numbers first.", _
-               vbInformation, "No Data"
+        MsgBox "No deliveries found.", vbInformation, "No Data"
         Exit Sub
     End If
 
-    ' --- Connect to SAP ---
     Set sapSession = GetSAPSession()
     If sapSession Is Nothing Then Exit Sub
 
-    ' --- Confirm before starting ---
-    Dim total As Long
-    total = lastRow - DATA_START_ROW + 1
-    If MsgBox("Ready to process " & total & " rows." & vbNewLine & _
-              "SAP must be open and logged in." & vbNewLine & vbNewLine & _
-              "Start PGI process now?", _
+    If MsgBox("Start PGI for Parts & Conversion now?", _
               vbYesNo + vbQuestion, "Confirm Start") = vbNo Then Exit Sub
 
-    doneCount = 0
-    errorCount = 0
-    skipCount = 0
+    doneCount = 0 : errorCount = 0 : skipCount = 0
 
-    ' --- Loop through each row ---
     For i = DATA_START_ROW To lastRow
         delivery = Trim(CStr(ws.Cells(i, COL_DELIVERY).Value))
         tracking = Trim(CStr(ws.Cells(i, COL_TRACKING).Value))
         category = UCase(Trim(CStr(ws.Cells(i, COL_CATEGORY).Value)))
 
-        ' Skip empty rows
-        If delivery = "" Then GoTo NextRow
+        If delivery = "" Then GoTo NextRowPGI
+        If InStr(ws.Cells(i, COL_STATUS).Value, "Done") > 0 Then GoTo NextRowPGI
 
-        ' Skip already processed rows
-        If ws.Cells(i, COL_STATUS).Value <> "" And _
-           InStr(ws.Cells(i, COL_STATUS).Value, "Done") > 0 Then
-            GoTo NextRow
-        End If
-
-        ' Skip Machines (different workflow - handled separately)
         If category = "MACHINE" Or category = "MACHINES" Then
-            SetStatus ws, i, "Pending - Machine", "YELLOW"
-            skipCount = skipCount + 1
-            GoTo NextRow
-        End If
-
-        ' Skip rows with no category that are not Parts/Conversion
-        If category <> "PARTS" And category <> "PART" And _
-           category <> "CONVERSION" And category <> "CONV" Then
-            If category <> "" Then
-                SetStatus ws, i, "Skipped - Unknown Category", "ORANGE"
-                skipCount = skipCount + 1
-                GoTo NextRow
+            If ws.Cells(i, COL_STATUS).Value = "" Then
+                SetStatus ws, i, "Pending - Machine", "YELLOW"
             End If
+            skipCount = skipCount + 1
+            GoTo NextRowPGI
         End If
 
-        ' --- Process this delivery ---
         SetStatus ws, i, "Processing...", "BLUE"
         DoEvents
 
-        If ProcessSingleDelivery(sapSession, delivery, tracking) Then
+        If ProcessPartsConversion(sapSession, delivery, tracking) Then
             SetStatus ws, i, "Done - PGI Posted", "GREEN"
             doneCount = doneCount + 1
         Else
@@ -125,90 +95,220 @@ Public Sub RunPGI()
             errorCount = errorCount + 1
         End If
 
-NextRow:
+NextRowPGI:
     Next i
 
-    ' --- Summary ---
-    MsgBox "PGI Process Complete!" & vbNewLine & vbNewLine & _
+    MsgBox "Parts & Conversion PGI Complete!" & vbNewLine & vbNewLine & _
            "Done:    " & doneCount & vbNewLine & _
            "Errors:  " & errorCount & vbNewLine & _
-           "Skipped: " & skipCount & vbNewLine & vbNewLine & _
-           "Check the Status column for details.", _
+           "Skipped (Machines): " & skipCount, _
            vbInformation, "Process Complete"
 End Sub
 
 ' ============================================================
-'  CORE: Open VL02N, fill delivery + tracking, post PGI
+'  RUN MACHINE PGI - Machines only
 ' ============================================================
-Private Function ProcessSingleDelivery(sapSession As Object, _
-                                        delivery As String, _
-                                        tracking As String) As Boolean
+Public Sub RunMachinePGI()
+    Dim ws         As Worksheet
+    Dim sapSession As Object
+    Dim lastRow    As Long
+    Dim i          As Long
+    Dim delivery   As String
+    Dim tracking   As String
+    Dim category   As String
+    Dim quantity   As Integer
+    Dim doneCount  As Integer
+    Dim errorCount As Integer
+    Dim skipCount  As Integer
+
+    Set ws = ThisWorkbook.Sheets(SHEET_NAME)
+    lastRow = ws.Cells(ws.Rows.Count, COL_DELIVERY).End(xlUp).Row
+
+    If lastRow < DATA_START_ROW Then
+        MsgBox "No deliveries found.", vbInformation, "No Data"
+        Exit Sub
+    End If
+
+    Set sapSession = GetSAPSession()
+    If sapSession Is Nothing Then Exit Sub
+
+    If MsgBox("Start PGI for Machines now?", _
+              vbYesNo + vbQuestion, "Confirm Start") = vbNo Then Exit Sub
+
+    doneCount = 0 : errorCount = 0 : skipCount = 0
+
+    For i = DATA_START_ROW To lastRow
+        delivery = Trim(CStr(ws.Cells(i, COL_DELIVERY).Value))
+        tracking = Trim(CStr(ws.Cells(i, COL_TRACKING).Value))
+        category = UCase(Trim(CStr(ws.Cells(i, COL_CATEGORY).Value)))
+
+        If delivery = "" Then GoTo NextRowMachine
+        If InStr(ws.Cells(i, COL_STATUS).Value, "Done") > 0 Then GoTo NextRowMachine
+
+        If category <> "MACHINE" And category <> "MACHINES" Then
+            skipCount = skipCount + 1
+            GoTo NextRowMachine
+        End If
+
+        quantity = 0
+        If ws.Cells(i, COL_QUANTITY).Value <> "" Then
+            quantity = CInt(ws.Cells(i, COL_QUANTITY).Value)
+        End If
+
+        If quantity <= 0 Then
+            SetStatus ws, i, "ERROR - Enter Quantity in Column E", "RED"
+            errorCount = errorCount + 1
+            GoTo NextRowMachine
+        End If
+
+        SetStatus ws, i, "Processing...", "BLUE"
+        DoEvents
+
+        If ProcessMachine(sapSession, delivery, tracking, quantity) Then
+            SetStatus ws, i, "Done - PGI Posted (" & quantity & " machines)", "GREEN"
+            doneCount = doneCount + 1
+        Else
+            SetStatus ws, i, "ERROR - Check Manually", "RED"
+            errorCount = errorCount + 1
+        End If
+
+NextRowMachine:
+    Next i
+
+    MsgBox "Machine PGI Complete!" & vbNewLine & vbNewLine & _
+           "Done:    " & doneCount & vbNewLine & _
+           "Errors:  " & errorCount & vbNewLine & _
+           "Skipped: " & skipCount, _
+           vbInformation, "Process Complete"
+End Sub
+
+' ============================================================
+'  CORE: Parts & Conversion
+' ============================================================
+Private Function ProcessPartsConversion(sapSession As Object, _
+                                         delivery As String, _
+                                         tracking As String) As Boolean
     On Error GoTo HandleError
 
-    ' 1. Open VL02N transaction
     sapSession.StartTransaction "VL02N"
     SAPWait WAIT_MEDIUM
 
-    ' 2. Enter delivery number and press Enter
     sapSession.findById("wnd[0]/usr/ctxtLIKP-VBELN").Text = delivery
-    sapSession.findById("wnd[0]").sendVKey 0   ' 0 = Enter
+    sapSession.findById("wnd[0]").sendVKey 0
     SAPWait WAIT_MEDIUM
 
-    ' 3. Check if delivery opened correctly (look for error in status bar)
     Dim statusBar As String
     statusBar = sapSession.findById("wnd[0]/sbar").Text
     If InStr(LCase(statusBar), "does not exist") > 0 Or _
-       InStr(LCase(statusBar), "not found") > 0 Or _
-       InStr(LCase(statusBar), "no authorization") > 0 Then
-        GoTo HandleError
-    End If
+       InStr(LCase(statusBar), "not found") > 0 Then GoTo HandleError
 
-    ' 4. Click Header Details toolbar button
     sapSession.findById("wnd[0]/tbar[1]/btn[8]").press
     SAPWait WAIT_SHORT
 
-    ' 5. Enter tracking number in BilOfLad field on Shipment tab
     sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\04/" & _
                         "ssubSUBSCREEN_BODY:SAPMV50A:2108/txtLIKP-BOLNR").Text = tracking
     SAPWait WAIT_SHORT
 
-    ' 6. Press Enter to confirm
     sapSession.findById("wnd[0]").sendVKey 0
     SAPWait WAIT_SHORT
 
-    ' 7. Click Post Goods Issue button
     sapSession.findById("wnd[0]/tbar[1]/btn[20]").press
     SAPWait WAIT_MEDIUM
 
-    ' 8. Check status bar for success
     statusBar = sapSession.findById("wnd[0]/sbar").Text
     If InStr(LCase(statusBar), "error") > 0 Or _
-       InStr(LCase(statusBar), "not possible") > 0 Then
-        GoTo HandleError
-    End If
+       InStr(LCase(statusBar), "not possible") > 0 Then GoTo HandleError
 
-    ProcessSingleDelivery = True
+    ProcessPartsConversion = True
     Exit Function
 
 HandleError:
-    ProcessSingleDelivery = False
+    ProcessPartsConversion = False
 End Function
 
 ' ============================================================
-'  HELPER: Connect to open SAP GUI session
+'  CORE: Machine (loops PGI per quantity)
+' ============================================================
+Private Function ProcessMachine(sapSession As Object, _
+                                 delivery As String, _
+                                 tracking As String, _
+                                 quantity As Integer) As Boolean
+    On Error GoTo HandleError
+
+    Dim statusBar As String
+    Dim j         As Integer
+
+    sapSession.StartTransaction "VL02N"
+    SAPWait WAIT_MEDIUM
+
+    sapSession.findById("wnd[0]/usr/ctxtLIKP-VBELN").Text = delivery
+    sapSession.findById("wnd[0]").sendVKey 0
+    SAPWait WAIT_MEDIUM
+
+    statusBar = sapSession.findById("wnd[0]/sbar").Text
+    If InStr(LCase(statusBar), "does not exist") > 0 Or _
+       InStr(LCase(statusBar), "not found") > 0 Then GoTo HandleError
+
+    ' Open Header Details and go to Shipment tab
+    sapSession.findById("wnd[0]/tbar[1]/btn[8]").press
+    SAPWait WAIT_SHORT
+
+    ' Select Shipment tab explicitly
+    sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\04").Select
+    SAPWait WAIT_SHORT
+
+    ' Enter tracking number in BilOfLad
+    sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\04/" & _
+                        "ssubSUBSCREEN_BODY:SAPMV50A:2108/txtLIKP-BOLNR").Text = tracking
+    SAPWait WAIT_SHORT
+
+    ' Save before starting PGI loop
+    sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
+    SAPWait WAIT_MEDIUM
+
+    ' Loop PGI once per machine
+    For j = 1 To quantity
+        ' Click Post Goods Issue
+        sapSession.findById("wnd[0]/tbar[1]/btn[20]").press
+        SAPWait WAIT_MEDIUM
+
+        ' Confirm the popup
+        sapSession.findById("wnd[1]/tbar[0]/btn[0]").press
+        SAPWait WAIT_SHORT
+
+        ' Save
+        sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
+        SAPWait WAIT_SHORT
+
+        ' Go back (except on last iteration)
+        If j < quantity Then
+            sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
+            SAPWait WAIT_SHORT
+        End If
+    Next j
+
+    ProcessMachine = True
+    Exit Function
+
+HandleError:
+    ProcessMachine = False
+End Function
+
+' ============================================================
+'  HELPER: Connect to SAP
 ' ============================================================
 Private Function GetSAPSession() As Object
-    Dim sapGui    As Object
-    Dim sapApp    As Object
-    Dim sapConn   As Object
-    Dim sapSess   As Object
+    Dim sapGui  As Object
+    Dim sapApp  As Object
+    Dim sapConn As Object
+    Dim sapSess As Object
 
     On Error GoTo NoSAP
 
     Set sapGui  = GetObject("SAPGUI")
     Set sapApp  = sapGui.GetScriptingEngine
-    Set sapConn = sapApp.Children(0)    ' First open connection
-    Set sapSess = sapConn.Children(0)   ' First session
+    Set sapConn = sapApp.Children(0)
+    Set sapSess = sapConn.Children(0)
 
     Set GetSAPSession = sapSess
     Exit Function
@@ -218,23 +318,22 @@ NoSAP:
            "Please make sure:" & vbNewLine & _
            "1. SAP GUI is open on your PC" & vbNewLine & _
            "2. You are logged into SAP" & vbNewLine & _
-           "3. SAP GUI Scripting is enabled" & vbNewLine & vbNewLine & _
-           "To enable scripting: SAP GUI > Help > Settings > Scripting tab", _
+           "3. SAP GUI Scripting is enabled", _
            vbCritical, "SAP Connection Error"
     Set GetSAPSession = Nothing
 End Function
 
 ' ============================================================
-'  HELPER: Wait for SAP screen to load
+'  HELPER: Wait
 ' ============================================================
 Private Sub SAPWait(milliseconds As Long)
     Application.Wait Now + (milliseconds / 86400000#)
 End Sub
 
 ' ============================================================
-'  HELPER: Set status cell color and text
+'  HELPER: Set status
 ' ============================================================
-Private Sub SetStatus(ws As Worksheet, row As Integer, _
+Private Sub SetStatus(ws As Worksheet, row As Long, _
                       statusText As String, colorName As String)
     With ws.Cells(row, COL_STATUS)
         .Value = statusText
