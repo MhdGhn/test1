@@ -238,6 +238,7 @@ Private Function ProcessMachine(sapSession As Object, _
     Dim statusBar As String
     Dim j         As Integer
 
+    ' 1. Open VL02N and enter delivery number
     sapSession.StartTransaction "VL02N"
     SAPWait WAIT_MEDIUM
 
@@ -249,42 +250,50 @@ Private Function ProcessMachine(sapSession As Object, _
     If InStr(LCase(statusBar), "does not exist") > 0 Or _
        InStr(LCase(statusBar), "not found") > 0 Then GoTo HandleError
 
-    ' Open Header Details and go to Shipment tab
+    ' 2. Open Header Details
     sapSession.findById("wnd[0]/tbar[1]/btn[8]").press
     SAPWait WAIT_SHORT
 
-    ' Select Shipment tab explicitly
+    ' 3. Select Shipment tab
     sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\04").Select
     SAPWait WAIT_SHORT
 
-    ' Enter tracking number in BilOfLad
+    ' 4. Enter tracking number in BilOfLad
     sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\04/" & _
                         "ssubSUBSCREEN_BODY:SAPMV50A:2108/txtLIKP-BOLNR").Text = tracking
     SAPWait WAIT_SHORT
 
-    ' Save before starting PGI loop
+    ' 5. Save
     sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
     SAPWait WAIT_MEDIUM
 
-    ' Loop PGI once per machine
+    ' 6. Cancel print dialog if it appears (F12 = Cancel in SAP)
+    On Error Resume Next
+    sapSession.findById("wnd[1]").sendVKey 12
+    SAPWait WAIT_SHORT
+    On Error GoTo HandleError
+
+    ' 7. Loop PGI once per machine
     For j = 1 To quantity
+
         ' Click Post Goods Issue
         sapSession.findById("wnd[0]/tbar[1]/btn[20]").press
         SAPWait WAIT_MEDIUM
 
-        ' Confirm the popup
+        ' Confirm Maintain Serial Numbers popup - click green tick
         sapSession.findById("wnd[1]/tbar[0]/btn[0]").press
         SAPWait WAIT_SHORT
 
         ' Save
         sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
-        SAPWait WAIT_SHORT
+        SAPWait WAIT_MEDIUM
 
-        ' Go back (except on last iteration)
-        If j < quantity Then
-            sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
-            SAPWait WAIT_SHORT
-        End If
+        ' Cancel print dialog after each save if it appears
+        On Error Resume Next
+        sapSession.findById("wnd[1]").sendVKey 12
+        SAPWait WAIT_SHORT
+        On Error GoTo HandleError
+
     Next j
 
     ProcessMachine = True
