@@ -2,12 +2,14 @@ Attribute VB_Name = "SAP_PGI_Automation"
 Option Explicit
 
 Private Const SHEET_NAME        As String = "Deliveries"
+Private Const BACKUP_SHEET      As String = "Backup"
 Private Const COL_DELIVERY      As Integer = 1   ' Column A
 Private Const COL_TRACKING      As Integer = 2   ' Column B
 Private Const COL_CATEGORY      As Integer = 3   ' Column C
 Private Const COL_STATUS        As Integer = 4   ' Column D
 Private Const COL_QUANTITY      As Integer = 5   ' Column E (machines only)
 Private Const DATA_START_ROW    As Integer = 2
+Private Const BACKUP_COUNT_COL  As Integer = 7   ' Column G in backup - stores exact row count
 
 Private Const WAIT_SHORT        As Long = 500
 Private Const WAIT_MEDIUM       As Long = 800
@@ -17,7 +19,6 @@ Private Const WAIT_MEDIUM       As Long = 800
 ' ============================================================
 Public Sub ResetDeliveries()
     Dim ws      As Worksheet
-    Dim lastRow As Long
     Dim answer  As Integer
 
     answer = MsgBox("This will delete ALL delivery and tracking numbers." & vbNewLine & _
@@ -26,15 +27,139 @@ Public Sub ResetDeliveries()
     If answer = vbNo Then Exit Sub
 
     Set ws = ThisWorkbook.Sheets(SHEET_NAME)
-    lastRow = ws.Cells(ws.Rows.Count, COL_DELIVERY).End(xlUp).Row
 
-    If lastRow >= DATA_START_ROW Then
-        ws.Range("A" & DATA_START_ROW & ":E" & lastRow).ClearContents
-        ws.Range("A" & DATA_START_ROW & ":E" & lastRow).Interior.ColorIndex = xlNone
-    End If
+    ' Backup BEFORE clearing
+    BackupData ws
+
+    ' Clear everything from row 2 down - fixed range, no End(xlUp)
+    ws.Range("A" & DATA_START_ROW & ":E1000").ClearContents
+    ws.Range("A" & DATA_START_ROW & ":E1000").Interior.ColorIndex = xlNone
+    ws.Range("A" & DATA_START_ROW & ":E1000").Font.Bold = False
 
     ws.Cells(DATA_START_ROW, COL_DELIVERY).Select
     MsgBox "All deliveries cleared. Ready for new entries.", vbInformation, "Reset Complete"
+End Sub
+
+' ============================================================
+'  UNDO RESET BUTTON
+' ============================================================
+Public Sub UndoReset()
+    Dim ws      As Worksheet
+    Dim wsBak   As Worksheet
+    Dim i       As Long
+    Dim bakRows As Long
+
+    ' Check backup sheet exists
+    On Error Resume Next
+    Set wsBak = ThisWorkbook.Sheets(BACKUP_SHEET)
+    On Error GoTo 0
+
+    If wsBak Is Nothing Then
+        MsgBox "No backup found. Please use Reset first before trying to Undo.", _
+               vbInformation, "No Backup"
+        Exit Sub
+    End If
+
+    ' Read exact row count stored during backup
+    bakRows = 0
+    If wsBak.Cells(1, BACKUP_COUNT_COL).Value <> "" Then
+        bakRows = CLng(wsBak.Cells(1, BACKUP_COUNT_COL).Value)
+    End If
+
+    If bakRows <= 0 Then
+        MsgBox "Backup appears to be empty. Nothing to restore.", _
+               vbInformation, "Nothing to Restore"
+        Exit Sub
+    End If
+
+    Set ws = ThisWorkbook.Sheets(SHEET_NAME)
+
+    ' Clear current data first
+    ws.Range("A" & DATA_START_ROW & ":E1000").ClearContents
+    ws.Range("A" & DATA_START_ROW & ":E1000").Interior.ColorIndex = xlNone
+    ws.Range("A" & DATA_START_ROW & ":E1000").Font.Bold = False
+
+    ' Restore EXACTLY bakRows rows - no guessing, no End(xlUp)
+    Dim destRow As Long
+    destRow = DATA_START_ROW
+
+    For i = DATA_START_ROW To DATA_START_ROW + bakRows - 1
+        ' Restore each column individually to preserve formatting
+        ws.Cells(destRow, COL_DELIVERY).Value  = wsBak.Cells(i, COL_DELIVERY).Value
+        ws.Cells(destRow, COL_TRACKING).Value  = wsBak.Cells(i, COL_TRACKING).Value
+        ws.Cells(destRow, COL_CATEGORY).Value  = wsBak.Cells(i, COL_CATEGORY).Value
+        ws.Cells(destRow, COL_STATUS).Value    = wsBak.Cells(i, COL_STATUS).Value
+        ws.Cells(destRow, COL_QUANTITY).Value  = wsBak.Cells(i, COL_QUANTITY).Value
+
+        ' Restore status cell color
+        Dim bakColor As Long
+        bakColor = wsBak.Cells(i, COL_STATUS).Interior.Color
+        If wsBak.Cells(i, COL_STATUS).Interior.ColorIndex <> xlNone Then
+            ws.Cells(destRow, COL_STATUS).Interior.Color = bakColor
+        End If
+        ws.Cells(destRow, COL_STATUS).Font.Bold = wsBak.Cells(i, COL_STATUS).Font.Bold
+
+        destRow = destRow + 1
+    Next i
+
+    MsgBox "Undo complete. " & bakRows & " rows restored.", vbInformation, "Undo Complete"
+End Sub
+
+' ============================================================
+'  BACKUP - called by ResetDeliveries
+' ============================================================
+Private Sub BackupData(ws As Worksheet)
+    Dim wsBak   As Worksheet
+    Dim i       As Long
+    Dim bakRow  As Long
+    Dim cellVal As String
+    Dim savedRows As Long
+
+    ' Delete old backup sheet if it exists
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    ThisWorkbook.Sheets(BACKUP_SHEET).Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+
+    ' Create new hidden backup sheet
+    Set wsBak = ThisWorkbook.Sheets.Add
+    wsBak.Name = BACKUP_SHEET
+    wsBak.Visible = xlSheetVeryHidden
+
+    ' Copy header row
+    ws.Rows(1).Copy wsBak.Rows(1)
+
+    ' Scan the sheet - only save rows that currently have a valid delivery number
+    ' Valid = cell is not empty AND is a number AND has 5+ digits
+    bakRow = DATA_START_ROW
+    savedRows = 0
+
+    For i = DATA_START_ROW To 1000
+        cellVal = Trim(CStr(ws.Cells(i, COL_DELIVERY).Value))
+
+        ' Only backup rows with a real delivery number visible on screen RIGHT NOW
+        If cellVal <> "" And IsNumeric(cellVal) And Len(cellVal) >= 5 Then
+            wsBak.Cells(bakRow, COL_DELIVERY).Value  = ws.Cells(i, COL_DELIVERY).Value
+            wsBak.Cells(bakRow, COL_TRACKING).Value  = ws.Cells(i, COL_TRACKING).Value
+            wsBak.Cells(bakRow, COL_CATEGORY).Value  = ws.Cells(i, COL_CATEGORY).Value
+            wsBak.Cells(bakRow, COL_STATUS).Value    = ws.Cells(i, COL_STATUS).Value
+            wsBak.Cells(bakRow, COL_QUANTITY).Value  = ws.Cells(i, COL_QUANTITY).Value
+
+            ' Copy status cell color
+            If ws.Cells(i, COL_STATUS).Interior.ColorIndex <> xlNone Then
+                wsBak.Cells(bakRow, COL_STATUS).Interior.Color = ws.Cells(i, COL_STATUS).Interior.Color
+            End If
+            wsBak.Cells(bakRow, COL_STATUS).Font.Bold = ws.Cells(i, COL_STATUS).Font.Bold
+
+            bakRow = bakRow + 1
+            savedRows = savedRows + 1
+        End If
+    Next i
+
+    ' Store EXACT count in column G row 1 of backup sheet
+    ' UndoReset reads this - no guessing required
+    wsBak.Cells(1, BACKUP_COUNT_COL).Value = savedRows
 End Sub
 
 ' ============================================================
@@ -205,6 +330,9 @@ Private Function ProcessPartsConversion(sapSession As Object, _
     sapSession.findById("wnd[0]/tbar[1]/btn[8]").press
     SAPWait WAIT_SHORT
 
+    sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\04").Select
+    SAPWait WAIT_SHORT
+
     sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\04/" & _
                         "ssubSUBSCREEN_BODY:SAPMV50A:2108/txtLIKP-BOLNR").Text = tracking
     SAPWait WAIT_SHORT
@@ -267,11 +395,10 @@ Private Function ProcessMachine(sapSession As Object, _
     sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
     SAPWait WAIT_MEDIUM
 
-    ' 6. Cancel print dialog if it appears (F12 = Cancel in SAP)
-    On Error Resume Next
-    sapSession.findById("wnd[1]").sendVKey 12
-    SAPWait WAIT_SHORT
-    On Error GoTo HandleError
+    ' 6. Re-enter delivery to get back to overview screen
+    sapSession.findById("wnd[0]/usr/ctxtLIKP-VBELN").Text = delivery
+    sapSession.findById("wnd[0]").sendVKey 0
+    SAPWait WAIT_MEDIUM
 
     ' 7. Loop PGI once per machine
     For j = 1 To quantity
@@ -288,11 +415,14 @@ Private Function ProcessMachine(sapSession As Object, _
         sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
         SAPWait WAIT_MEDIUM
 
-        ' Cancel print dialog after each save if it appears
-        On Error Resume Next
-        sapSession.findById("wnd[1]").sendVKey 12
-        SAPWait WAIT_SHORT
-        On Error GoTo HandleError
+        ' If more machines remain, go back to re-enter delivery
+        If j < quantity Then
+            sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
+            SAPWait WAIT_SHORT
+            sapSession.findById("wnd[0]/usr/ctxtLIKP-VBELN").Text = delivery
+            sapSession.findById("wnd[0]").sendVKey 0
+            SAPWait WAIT_MEDIUM
+        End If
 
     Next j
 
