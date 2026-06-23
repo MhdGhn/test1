@@ -391,9 +391,9 @@ Private Function ProcessMachine(sapSession As Object, _
                         "ssubSUBSCREEN_BODY:SAPMV50A:2108/txtLIKP-BOLNR").Text = tracking
     SAPWait WAIT_SHORT
 
-    ' 5. Save
+    ' 5. Save (wait 5s for SAP to finish saving tracking number)
     sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
-    SAPWait WAIT_MEDIUM
+    SAPWait 5000
 
     ' 6. Re-enter delivery to get back to overview screen
     sapSession.findById("wnd[0]/usr/ctxtLIKP-VBELN").Text = delivery
@@ -401,11 +401,31 @@ Private Function ProcessMachine(sapSession As Object, _
     SAPWait WAIT_MEDIUM
 
     ' 7. Loop PGI once per machine
+    Dim k          As Integer
+    Dim pgiClicked As Boolean
+    Dim wnd1Text   As String
+
     For j = 1 To quantity
 
-        ' Click Post Goods Issue
-        sapSession.findById("wnd[0]/tbar[1]/btn[20]").press
-        SAPWait WAIT_MEDIUM
+        ' Click Post Goods Issue - retry up to 3 times if SAP not ready
+        pgiClicked = False
+        For k = 1 To 3
+            sapSession.findById("wnd[0]/tbar[1]/btn[20]").press
+            SAPWait 1500
+
+            ' Check if confirmation popup appeared
+            On Error Resume Next
+            wnd1Text = sapSession.findById("wnd[1]").Text
+            On Error GoTo HandleError
+            If Err.Number = 0 And Len(wnd1Text) > 0 Then
+                pgiClicked = True
+                Exit For
+            End If
+            Err.Clear
+            SAPWait 1000
+        Next k
+
+        If Not pgiClicked Then GoTo HandleError
 
         ' Confirm Maintain Serial Numbers popup - click green tick
         sapSession.findById("wnd[1]/tbar[0]/btn[0]").press
