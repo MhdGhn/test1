@@ -392,8 +392,17 @@ Private Function ProcessMachine(sapSession As Object, _
     sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
     SAPWait 5000
 
-    ' 6. Loop PGI once per machine (stay on current screen after save)
+    ' 6. Loop PGI once per machine
     For j = 1 To quantity
+
+        ' For machines 2, 3, etc.: re-open VL02N fresh and go to delivery overview
+        If j > 1 Then
+            sapSession.findById("wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell/shellcont[0]/shell").doubleClickNode "F00002"
+            SAPWait WAIT_MEDIUM
+            sapSession.findById("wnd[0]/usr/ctxtLIKP-VBELN").Text = delivery
+            sapSession.findById("wnd[0]").sendVKey 0
+            SAPWait WAIT_MEDIUM
+        End If
 
         ' Click Post Goods Issue
         sapSession.findById("wnd[0]/tbar[1]/btn[20]").press
@@ -406,15 +415,6 @@ Private Function ProcessMachine(sapSession As Object, _
         ' Save
         sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
         SAPWait WAIT_MEDIUM
-
-        ' If more machines remain, go back and re-enter delivery
-        If j < quantity Then
-            sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
-            SAPWait WAIT_SHORT
-            sapSession.findById("wnd[0]/usr/ctxtLIKP-VBELN").Text = delivery
-            sapSession.findById("wnd[0]").sendVKey 0
-            SAPWait WAIT_MEDIUM
-        End If
 
     Next j
 
