@@ -366,10 +366,11 @@ Private Function ProcessMachine(sapSession As Object, _
     Dim statusBar As String
     Dim j         As Integer
 
-    ' 1. Open VL02N and enter delivery number
-    sapSession.StartTransaction "VL02N"
+    ' 1. Open VL02N via F00002 favorites node
+    sapSession.findById("wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell/shellcont[0]/shell").doubleClickNode "F00002"
     SAPWait WAIT_MEDIUM
 
+    ' 2. Enter delivery number
     sapSession.findById("wnd[0]/usr/ctxtLIKP-VBELN").Text = delivery
     sapSession.findById("wnd[0]").sendVKey 0
     SAPWait WAIT_MEDIUM
@@ -378,54 +379,25 @@ Private Function ProcessMachine(sapSession As Object, _
     If InStr(LCase(statusBar), "does not exist") > 0 Or _
        InStr(LCase(statusBar), "not found") > 0 Then GoTo HandleError
 
-    ' 2. Open Header Details
+    ' 3. Open Header Details
     sapSession.findById("wnd[0]/tbar[1]/btn[8]").press
     SAPWait WAIT_SHORT
 
-    ' 3. Select Shipment tab
-    sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\04").Select
-    SAPWait WAIT_SHORT
-
-    ' 4. Enter tracking number in BilOfLad
+    ' 4. Enter tracking number in BilOfLad (Shipment tab)
     sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_HEAD/tabpT\04/" & _
                         "ssubSUBSCREEN_BODY:SAPMV50A:2108/txtLIKP-BOLNR").Text = tracking
     SAPWait WAIT_SHORT
 
-    ' 5. Save (wait 5s for SAP to finish saving tracking number)
+    ' 5. Save and wait 5s for SAP to finish processing
     sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
     SAPWait 5000
 
-    ' 6. Re-enter delivery to get back to overview screen
-    sapSession.findById("wnd[0]/usr/ctxtLIKP-VBELN").Text = delivery
-    sapSession.findById("wnd[0]").sendVKey 0
-    SAPWait WAIT_MEDIUM
-
-    ' 7. Loop PGI once per machine
-    Dim k          As Integer
-    Dim pgiClicked As Boolean
-    Dim wnd1Text   As String
-
+    ' 6. Loop PGI once per machine (stay on current screen after save)
     For j = 1 To quantity
 
-        ' Click Post Goods Issue - retry up to 3 times if SAP not ready
-        pgiClicked = False
-        For k = 1 To 3
-            sapSession.findById("wnd[0]/tbar[1]/btn[20]").press
-            SAPWait 1500
-
-            ' Check if confirmation popup appeared
-            On Error Resume Next
-            wnd1Text = sapSession.findById("wnd[1]").Text
-            On Error GoTo HandleError
-            If Err.Number = 0 And Len(wnd1Text) > 0 Then
-                pgiClicked = True
-                Exit For
-            End If
-            Err.Clear
-            SAPWait 1000
-        Next k
-
-        If Not pgiClicked Then GoTo HandleError
+        ' Click Post Goods Issue
+        sapSession.findById("wnd[0]/tbar[1]/btn[20]").press
+        SAPWait WAIT_MEDIUM
 
         ' Confirm Maintain Serial Numbers popup - click green tick
         sapSession.findById("wnd[1]/tbar[0]/btn[0]").press
@@ -435,7 +407,7 @@ Private Function ProcessMachine(sapSession As Object, _
         sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
         SAPWait WAIT_MEDIUM
 
-        ' If more machines remain, go back to re-enter delivery
+        ' If more machines remain, go back and re-enter delivery
         If j < quantity Then
             sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
             SAPWait WAIT_SHORT
