@@ -366,8 +366,8 @@ Private Function ProcessMachine(sapSession As Object, _
     Dim statusBar As String
     Dim j         As Integer
 
-    ' 1. Open VL02N via F00002 favorites node
-    sapSession.findById("wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell/shellcont[0]/shell").doubleClickNode "F00002"
+    ' 1. Open VL02N (works from any screen)
+    sapSession.StartTransaction "VL02N"
     SAPWait WAIT_MEDIUM
 
     ' 2. Enter delivery number
