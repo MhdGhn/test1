@@ -1023,32 +1023,20 @@ Private Function ProcessMachinePicking(sapSession As Object, _
         sapSession.findById("wnd[0]/tbar[1]/btn[8]").press
         SAPWait WAIT_MEDIUM
 
-        ' Select all delivery line rows
-        sapSession.findById("wnd[0]/usr/btnTC_LIPS_MARK").press
-        SAPWait WAIT_SHORT
-
-        ' Click Batch Split button
-        sapSession.findById("wnd[0]/tbar[1]/btn[5]").press
-        SAPWait WAIT_MEDIUM
-
-        ' Assign one serial number per machine
+        ' For each machine: select the delivery row, open Batch Split popup,
+        ' the serial is already highlighted - click green tick to assign
         For j = 1 To quantity
-            sapSession.findById("wnd[1]/usr/tblZSDE_BATCH_SPLIT_FOR_DELIVERYTC_OBJKA") _
+            sapSession.findById("wnd[0]/usr/tblZSDE_BATCH_SPLIT_FOR_DELIVERYTC_LIPS") _
                 .getAbsoluteRow(0).Selected = True
             SAPWait 100
-            sapSession.findById("wnd[1]/usr/tblZSDE_BATCH_SPLIT_FOR_DELIVERYTC_OBJKA/" & _
-                                "txtI_OBJKA-SERNR[0,0]").SetFocus
-            SAPWait 100
-            sapSession.findById("wnd[1]/tbar[0]/btn[5]").press
+            sapSession.findById("wnd[0]/tbar[1]/btn[5]").press  ' Batch Split button
+            SAPWait WAIT_MEDIUM
+            sapSession.findById("wnd[1]/tbar[0]/btn[0]").press  ' Green tick - assign serial
             SAPWait WAIT_MEDIUM
         Next j
 
-        ' Back to SAP Easy Access (3 x back/cancel)
-        sapSession.findById("wnd[0]/tbar[0]/btn[12]").press
-        SAPWait WAIT_SHORT
-        sapSession.findById("wnd[0]/tbar[0]/btn[12]").press
-        SAPWait WAIT_SHORT
-        sapSession.findById("wnd[0]/tbar[0]/btn[12]").press
+        ' Go back to re-open VL02N
+        sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
         SAPWait WAIT_MEDIUM
 
         ' Re-open VL02N ready for picking
