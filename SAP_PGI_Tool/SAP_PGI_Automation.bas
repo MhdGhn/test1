@@ -942,7 +942,6 @@ Private Function ProcessMachinePicking(sapSession As Object, _
     Dim statusBar  As String
     Dim j          As Integer
     Dim basePath   As String
-    Dim shellPath  As String
     Dim btnExists  As Boolean
     Dim needZVSER  As Boolean
     Dim wndTitle   As String
@@ -950,7 +949,6 @@ Private Function ProcessMachinePicking(sapSession As Object, _
 
     basePath  = "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02/" & _
                 "ssubSUBSCREEN_BODY:SAPMV50A:1104/tblSAPMV50ATC_LIPS_PICK/"
-    shellPath = "wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell/shellcont[0]/shell"
 
     ' ── Open VL02N ──────────────────────────────────────────
     sapSession.StartTransaction "VL02N"
@@ -1015,10 +1013,8 @@ Private Function ProcessMachinePicking(sapSession As Object, _
 
     ' ── ZVSER: Assign serial numbers (Cases A and B only) ───
     If needZVSER Then
-        ' Navigate to ZVSER (F00004 in SAP Easy Access)
-        sapSession.findById(shellPath).selectedNode = "F00004"
-        SAPWait WAIT_SHORT
-        sapSession.findById(shellPath).doubleClickNode "F00004"
+        ' Start ZVSER directly - works from any screen in SAP
+        sapSession.StartTransaction "ZVSER"
         SAPWait WAIT_MEDIUM
 
         sapSession.findById("wnd[0]/usr/ctxtIT_VBELN-LOW").Text = delivery
