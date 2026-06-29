@@ -918,18 +918,19 @@ End Function
 ' ============================================================
 '  CORE: Machine Picking
 '
-'  Detects whether batch splits are already configured by
-'  pressing [9,0] and checking if a popup window (wnd[1])
-'  appears.
+'  Three cases handled automatically:
 '
-'  PATH 1 - Popup appeared (batch splits NOT yet set up):
-'    Close popup, go to ZVSER F00004, assign serial numbers
-'    for all machines, come back to VL02N, then pick.
+'  CASE A - Toggle button does not exist at all:
+'    Serials not assigned. Go to ZVSER, assign, come back, pick.
 '
-'  PATH 2 - No popup (batch splits ALREADY configured):
-'    Collapse what we just opened, then pick directly.
+'  CASE B - Toggle button exists, popup appears when pressed:
+'    Serials not assigned. Close popup, go to ZVSER, assign,
+'    come back, pick.
 '
-'  Picking loop (both paths):
+'  CASE C - Toggle button exists, expands inline (no popup):
+'    Serials already assigned. Collapse, pick directly.
+'
+'  Picking loop (all cases):
 '    For each item: expand [9,j] -> fill [6,1]="1" ->
 '    sendVKey 0 -> collapse [9,0]
 ' ============================================================
@@ -938,15 +939,17 @@ Private Function ProcessMachinePicking(sapSession As Object, _
                                         quantity As Integer) As Boolean
     On Error GoTo HandleError
 
-    Dim statusBar     As String
-    Dim j             As Integer
-    Dim basePath      As String
-    Dim hasBatchSplit As Boolean
-    Dim wndTitle      As String
-    Dim shellPath     As String
+    Dim statusBar  As String
+    Dim j          As Integer
+    Dim basePath   As String
+    Dim shellPath  As String
+    Dim btnExists  As Boolean
+    Dim needZVSER  As Boolean
+    Dim wndTitle   As String
+    Dim testBtn    As Object
 
-    basePath = "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02/" & _
-               "ssubSUBSCREEN_BODY:SAPMV50A:1104/tblSAPMV50ATC_LIPS_PICK/"
+    basePath  = "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02/" & _
+                "ssubSUBSCREEN_BODY:SAPMV50A:1104/tblSAPMV50ATC_LIPS_PICK/"
     shellPath = "wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell/shellcont[0]/shell"
 
     ' ── Open VL02N ──────────────────────────────────────────
@@ -963,31 +966,56 @@ Private Function ProcessMachinePicking(sapSession As Object, _
     sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02").Select
     SAPWait WAIT_SHORT
 
-    ' ── Press expand button on first item to test mode ──────
-    sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").SetFocus
-    SAPWait 100
-    sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").press
-    SAPWait WAIT_SHORT
-
-    ' Detect popup: if wnd[1] exists a batch-split config
-    ' popup appeared, meaning serials are not assigned yet.
-    hasBatchSplit = False
+    ' ── Check if batch split toggle button exists at all ────
+    btnExists = False
     On Error Resume Next
-    wndTitle = sapSession.findById("wnd[1]").Text
-    If Err.Number = 0 Then hasBatchSplit = True
+    Set testBtn = sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]")
+    If Err.Number = 0 And Not testBtn Is Nothing Then btnExists = True
     Err.Clear
     On Error GoTo HandleError
 
-    ' ── PATH 1: Popup appeared - set up batch splits first ──
-    If hasBatchSplit Then
-        ' Close the popup cleanly
-        sapSession.findById("wnd[1]/tbar[0]/btn[12]").press
-        SAPWait WAIT_SHORT
-        ' Back to SAP Easy Access
+    needZVSER = False
+
+    If Not btnExists Then
+        ' CASE A: No toggle button - serials not assigned yet
+        needZVSER = True
         sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
         SAPWait WAIT_MEDIUM
 
-        ' Navigate to ZVSER (F00004) and assign serial numbers
+    Else
+        ' Toggle button exists - press it to see what happens
+        testBtn.SetFocus
+        SAPWait 100
+        testBtn.press
+        SAPWait WAIT_SHORT
+
+        ' Check if a popup appeared (wnd[1] exists = serials not assigned)
+        On Error Resume Next
+        wndTitle = sapSession.findById("wnd[1]").Text
+        If Err.Number = 0 Then
+            ' CASE B: Popup appeared - serials not assigned yet
+            needZVSER = True
+            sapSession.findById("wnd[1]/tbar[0]/btn[12]").press  ' close popup
+            SAPWait WAIT_SHORT
+            sapSession.findById("wnd[0]/tbar[0]/btn[3]").press   ' back to Easy Access
+            SAPWait WAIT_MEDIUM
+        End If
+        Err.Clear
+        On Error GoTo HandleError
+
+        If Not needZVSER Then
+            ' CASE C: Inline expansion - serials already assigned
+            ' Collapse the row we just expanded before the picking loop
+            sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").SetFocus
+            SAPWait 100
+            sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").press
+            SAPWait WAIT_SHORT
+        End If
+    End If
+
+    ' ── ZVSER: Assign serial numbers (Cases A and B only) ───
+    If needZVSER Then
+        ' Navigate to ZVSER (F00004 in SAP Easy Access)
         sapSession.findById(shellPath).selectedNode = "F00004"
         SAPWait WAIT_SHORT
         sapSession.findById(shellPath).doubleClickNode "F00004"
@@ -996,11 +1024,10 @@ Private Function ProcessMachinePicking(sapSession As Object, _
         sapSession.findById("wnd[0]/usr/ctxtIT_VBELN-LOW").Text = delivery
         sapSession.findById("wnd[0]/usr/ctxtIT_VBELN-LOW").SetFocus
         SAPWait 100
-
         sapSession.findById("wnd[0]/tbar[1]/btn[8]").press
         SAPWait WAIT_MEDIUM
 
-        ' Select all delivery rows
+        ' Select all delivery line rows
         sapSession.findById("wnd[0]/usr/btnTC_LIPS_MARK").press
         SAPWait WAIT_SHORT
 
@@ -1020,7 +1047,7 @@ Private Function ProcessMachinePicking(sapSession As Object, _
             SAPWait WAIT_MEDIUM
         Next j
 
-        ' Go back to SAP Easy Access (3x back)
+        ' Back to SAP Easy Access (3 x back/cancel)
         sapSession.findById("wnd[0]/tbar[0]/btn[12]").press
         SAPWait WAIT_SHORT
         sapSession.findById("wnd[0]/tbar[0]/btn[12]").press
@@ -1036,19 +1063,12 @@ Private Function ProcessMachinePicking(sapSession As Object, _
         SAPWait WAIT_MEDIUM
         sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02").Select
         SAPWait WAIT_SHORT
-
-    ' ── PATH 2: No popup - batch splits already configured ──
-    Else
-        ' Collapse the row we just expanded before the loop
-        sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").SetFocus
-        SAPWait 100
-        sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").press
-        SAPWait WAIT_SHORT
     End If
 
-    ' ── Picking loop (same for both paths) ──────────────────
-    ' Each item: expand toggle, fill picked qty = 1, sendVKey 0, collapse toggle.
-    ' After expansion SAP scrolls that item to row 0, so collapse is always [9,0].
+    ' ── Picking loop (all cases) ─────────────────────────────
+    ' Expand item j, fill picked qty = 1, confirm with VKey 0,
+    ' collapse. After expansion SAP scrolls item to row 0,
+    ' so collapse is always [9,0] regardless of which item.
     For j = 0 To quantity - 1
         sapSession.findById(basePath & "btnRV50A-CHMULT[9," & j & "]").SetFocus
         SAPWait 100
