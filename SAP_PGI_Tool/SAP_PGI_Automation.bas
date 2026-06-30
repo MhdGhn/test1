@@ -1190,6 +1190,43 @@ HandleError:
 End Function
 
 ' ============================================================
+'  OUTBOUND DELIVERY MONITOR
+' ============================================================
+Public Sub RunOutboundDeliveryMonitor()
+    Dim sapSession As Object
+
+    Set sapSession = GetSAPSession()
+    If sapSession Is Nothing Then Exit Sub
+
+    On Error GoTo HandleError
+
+    sapSession.findById("wnd[0]").maximize
+
+    sapSession.findById("wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell/shellcont[0]/shell") _
+        .selectedNode = "F00007"
+    sapSession.findById("wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell/shellcont[0]/shell") _
+        .doubleClickNode "F00007"
+    SAPWait WAIT_MEDIUM
+
+    sapSession.findById("wnd[0]/usr/btnBUTTON4").press
+    SAPWait WAIT_SHORT
+
+    sapSession.findById("wnd[0]/usr/ctxtIF_VSTEL-LOW").Text = "A200"
+    sapSession.findById("wnd[0]/usr/ctxtIF_VSTEL-HIGH").Text = "A230"
+    sapSession.findById("wnd[0]/usr/ctxtIF_VSTEL-HIGH").SetFocus
+    sapSession.findById("wnd[0]/usr/ctxtIF_VSTEL-HIGH").caretPosition = 4
+
+    sapSession.findById("wnd[0]/tbar[1]/btn[8]").press
+    SAPWait WAIT_MEDIUM
+
+    Exit Sub
+
+HandleError:
+    MsgBox "Error opening Outbound Delivery Monitor." & vbNewLine & _
+           "Please check the SAP screen.", vbExclamation, "Outbound Delivery Monitor"
+End Sub
+
+' ============================================================
 '  HELPER: Connect to SAP
 ' ============================================================
 Private Function GetSAPSession() As Object
@@ -1300,7 +1337,7 @@ Sub AlignButtons()
     Dim gap       As Double
     Dim placed    As Integer
 
-    Dim btnOrder(8) As String
+    Dim btnOrder(9) As String
     btnOrder(0) = "IMPORT DELIVERY (from PDF)"
     btnOrder(1) = "RUN PICKING  (Conversion)"
     btnOrder(2) = "RUN PICKING  (Machines)"
@@ -1310,6 +1347,7 @@ Sub AlignButtons()
     btnOrder(6) = "RESET TEMPLATE"
     btnOrder(7) = "UNDO RESET"
     btnOrder(8) = "Create Delivery number"
+    btnOrder(9) = "OUTBOUND DELIVERY MONITOR"
 
     btnLeft = ws.Columns("H").Left + 5
     btnWidth = 180
@@ -1319,7 +1357,7 @@ Sub AlignButtons()
     placed = 0
 
     Dim j As Integer
-    For j = 0 To 8
+    For j = 0 To 9
         For Each btn In ws.Buttons
             If Trim(btn.Caption) = Trim(btnOrder(j)) Then
                 btn.Left = btnLeft
