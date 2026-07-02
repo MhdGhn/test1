@@ -946,6 +946,8 @@ Private Function ProcessMachinePicking(sapSession As Object, _
     Dim needZVSER  As Boolean
     Dim wndTitle   As String
     Dim testBtn    As Object
+    Dim stillOnTab As Boolean
+    Dim tabEl      As Object
 
     basePath  = "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02/" & _
                 "ssubSUBSCREEN_BODY:SAPMV50A:1104/tblSAPMV50ATC_LIPS_PICK/"
@@ -975,45 +977,60 @@ Private Function ProcessMachinePicking(sapSession As Object, _
     needZVSER = False
 
     If Not btnExists Then
-        ' CASE A: No toggle button - serials not assigned yet
+        ' CASE A: No toggle button - go straight to ZVSER
         needZVSER = True
-        sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
-        SAPWait WAIT_MEDIUM
 
     Else
-        ' Toggle button exists - press it to see what happens
+        ' Toggle exists - press it to see what happens
         testBtn.SetFocus
         SAPWait 100
         testBtn.press
         SAPWait WAIT_SHORT
 
-        ' Check if a popup appeared (wnd[1] exists = serials not assigned)
+        ' Check 1: Did a popup window appear?
         On Error Resume Next
         wndTitle = sapSession.findById("wnd[1]").Text
         If Err.Number = 0 Then
-            ' CASE B: Popup appeared - serials not assigned yet
+            ' Popup appeared - close it and go back one screen
             needZVSER = True
-            sapSession.findById("wnd[1]/tbar[0]/btn[12]").press  ' close popup
+            sapSession.findById("wnd[1]/tbar[0]/btn[12]").press
             SAPWait WAIT_SHORT
-            sapSession.findById("wnd[0]/tbar[0]/btn[3]").press   ' back to Easy Access
+            sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
             SAPWait WAIT_MEDIUM
         End If
         Err.Clear
         On Error GoTo HandleError
 
         If Not needZVSER Then
-            ' CASE C: Inline expansion - serials already assigned
-            ' Collapse the row we just expanded before the picking loop
-            sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").SetFocus
-            SAPWait 100
-            sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").press
-            SAPWait WAIT_SHORT
+            ' Check 2: Are we still on the picking tab table?
+            stillOnTab = False
+            On Error Resume Next
+            Set tabEl = sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]")
+            If Err.Number = 0 And Not tabEl Is Nothing Then stillOnTab = True
+            Err.Clear
+            On Error GoTo HandleError
+
+            If Not stillOnTab Then
+                ' CASE B: Toggle navigated to a sub-screen
+                ' Two btn[3] presses to get back to SAP Easy Access
+                needZVSER = True
+                sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
+                SAPWait WAIT_SHORT
+                sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
+                SAPWait WAIT_MEDIUM
+            Else
+                ' CASE C: Inline expansion - serials already assigned
+                ' Collapse the row before entering the picking loop
+                sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").SetFocus
+                SAPWait 100
+                sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").press
+                SAPWait WAIT_SHORT
+            End If
         End If
     End If
 
     ' ── ZVSER: Assign serial numbers (Cases A and B only) ───
     If needZVSER Then
-        ' Start ZVSER directly - works from any screen in SAP
         sapSession.StartTransaction "ZVSER"
         SAPWait WAIT_MEDIUM
 
@@ -1023,20 +1040,30 @@ Private Function ProcessMachinePicking(sapSession As Object, _
         sapSession.findById("wnd[0]/tbar[1]/btn[8]").press
         SAPWait WAIT_MEDIUM
 
-        ' For each machine: select the delivery row, open Batch Split popup,
-        ' the serial is already highlighted - click green tick to assign
+        ' For each machine: select all rows, open Batch Split popup,
+        ' select serial row, assign with btn[5] - repeat per machine
         For j = 1 To quantity
-            sapSession.findById("wnd[0]/usr/tblZSDE_BATCH_SPLIT_FOR_DELIVERYTC_LIPS") _
+            sapSession.findById("wnd[0]/usr/btnTC_LIPS_MARK").press
+            SAPWait WAIT_SHORT
+            sapSession.findById("wnd[0]/tbar[1]/btn[5]").press
+            SAPWait WAIT_MEDIUM
+
+            sapSession.findById("wnd[1]/usr/tblZSDE_BATCH_SPLIT_FOR_DELIVERYTC_OBJKA") _
                 .getAbsoluteRow(0).Selected = True
             SAPWait 100
-            sapSession.findById("wnd[0]/tbar[1]/btn[5]").press  ' Batch Split button
-            SAPWait WAIT_MEDIUM
-            sapSession.findById("wnd[1]/tbar[0]/btn[0]").press  ' Green tick - assign serial
+            sapSession.findById("wnd[1]/usr/tblZSDE_BATCH_SPLIT_FOR_DELIVERYTC_OBJKA/" & _
+                                "txtI_OBJKA-SERNR[0,0]").SetFocus
+            SAPWait 100
+            sapSession.findById("wnd[1]/tbar[0]/btn[5]").press
             SAPWait WAIT_MEDIUM
         Next j
 
-        ' Go back to re-open VL02N
-        sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
+        ' Exit ZVSER - three btn[12] presses back to Easy Access
+        sapSession.findById("wnd[0]/tbar[0]/btn[12]").press
+        SAPWait WAIT_SHORT
+        sapSession.findById("wnd[0]/tbar[0]/btn[12]").press
+        SAPWait WAIT_SHORT
+        sapSession.findById("wnd[0]/tbar[0]/btn[12]").press
         SAPWait WAIT_MEDIUM
 
         ' Re-open VL02N ready for picking
