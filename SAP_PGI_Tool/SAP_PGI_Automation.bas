@@ -1022,10 +1022,15 @@ Private Function ProcessMachinePicking(sapSession As Object, _
                 ' Toggle expanded inline - check if sub-row actually has data
                 Dim subRowEl   As Object
                 Dim hasSubData As Boolean
+                Dim subRowVal  As String
                 hasSubData = False
+                subRowVal = ""
                 On Error Resume Next
                 Set subRowEl = sapSession.findById(basePath & "txtLIPSD-PIKMG[6,1]")
-                If Err.Number = 0 And Not subRowEl Is Nothing Then hasSubData = True
+                If Err.Number = 0 And Not subRowEl Is Nothing Then
+                    subRowVal = Trim(subRowEl.Text)
+                    If subRowVal <> "" And subRowVal <> "0" Then hasSubData = True
+                End If
                 Err.Clear
                 On Error GoTo HandleError
 
