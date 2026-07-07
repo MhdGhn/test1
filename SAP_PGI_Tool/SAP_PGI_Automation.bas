@@ -1127,14 +1127,16 @@ Private Function ProcessMachinePicking(sapSession As Object, _
             pickBtn.press
             SAPWait WAIT_SHORT
 
-            sapSession.findById(basePath & "txtLIPSD-PIKMG[6,1]").Text = "1"
+            ' Sub-row is always at pickRow + 1 after expansion
+            sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & (pickRow + 1) & "]").Text = "1"
             SAPWait 100
             sapSession.findById("wnd[0]").sendVKey 0
             SAPWait 100
 
-            sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").SetFocus
+            ' Collapse the same row we expanded
+            sapSession.findById(basePath & "btnRV50A-CHMULT[9," & pickRow & "]").SetFocus
             SAPWait 100
-            sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").press
+            sapSession.findById(basePath & "btnRV50A-CHMULT[9," & pickRow & "]").press
             SAPWait WAIT_MEDIUM
 
             pickedCount = pickedCount + 1
