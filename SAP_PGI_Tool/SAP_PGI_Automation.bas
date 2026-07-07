@@ -888,16 +888,21 @@ Private Function ProcessPartsPicking(sapSession As Object, _
     rowIndex = 0
     Do
         Dim deliveryQty As String
+        Dim currentSLoc As String
         deliveryQty = ""
+        currentSLoc = ""
         On Error Resume Next
-        deliveryQty = sapSession.findById(basePath & "txtLIPS-LFIMG[5," & rowIndex & "]").Text
+        deliveryQty = sapSession.findById(basePath & "txtLIPS-LFIMG[4," & rowIndex & "]").Text
         If Err.Number <> 0 Then
             Err.Clear
             On Error GoTo HandleError
             Exit Do
         End If
+        currentSLoc = sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text
         On Error GoTo HandleError
-        sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = "A200"
+        If Trim(currentSLoc) = "" Then
+            sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = "A200"
+        End If
         sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").Text = deliveryQty
         SAPWait 100
         rowIndex = rowIndex + 1
