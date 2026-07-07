@@ -894,9 +894,26 @@ Private Function ProcessPartsPicking(sapSession As Object, _
     sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02").Select
     SAPWait WAIT_SHORT
 
-    sapSession.findById(basePath & "ctxtLIPS-LGORT[3,0]").Text = "A200"
-    sapSession.findById(basePath & "txtLIPSD-PIKMG[6,0]").Text = CStr(quantity)
-    SAPWait 100
+    Dim rowIndex  As Integer
+    Dim lineCount As Integer
+    lineCount = 0
+    rowIndex = 0
+    Do
+        On Error Resume Next
+        sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = "A200"
+        If Err.Number <> 0 Then
+            Err.Clear
+            On Error GoTo HandleError
+            Exit Do
+        End If
+        sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").Text = CStr(quantity)
+        On Error GoTo HandleError
+        SAPWait 100
+        rowIndex = rowIndex + 1
+        lineCount = lineCount + 1
+    Loop
+
+    If lineCount = 0 Then GoTo HandleError
 
     sapSession.findById("wnd[0]").sendVKey 0
     SAPWait WAIT_SHORT
