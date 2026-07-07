@@ -972,7 +972,12 @@ Private Function ProcessMachinePicking(sapSession As Object, _
     btnExists = False
     On Error Resume Next
     Set testBtn = sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]")
-    If Err.Number = 0 And Not testBtn Is Nothing Then btnExists = True
+    If Err.Number = 0 And Not testBtn Is Nothing Then
+        Dim bIcon As String
+        bIcon = ""
+        bIcon = testBtn.IconName
+        If Err.Number = 0 And Trim(bIcon) <> "" Then btnExists = True
+    End If
     Err.Clear
     On Error GoTo HandleError
 
@@ -1094,23 +1099,50 @@ Private Function ProcessMachinePicking(sapSession As Object, _
         SAPWait WAIT_SHORT
     End If
 
-    ' Picking loop (all cases)
-    For j = 0 To quantity - 1
-        sapSession.findById(basePath & "btnRV50A-CHMULT[9," & j & "]").SetFocus
-        SAPWait 100
-        sapSession.findById(basePath & "btnRV50A-CHMULT[9," & j & "]").press
-        SAPWait WAIT_SHORT
+    ' Picking loop - only process rows that have the active batch split icon
+    Dim pickRow    As Integer
+    Dim pickedCount As Integer
+    Dim pickBtn    As Object
+    Dim pickIcon   As String
+    pickRow = 0
+    pickedCount = 0
 
-        sapSession.findById(basePath & "txtLIPSD-PIKMG[6,1]").Text = "1"
-        SAPWait 100
-        sapSession.findById("wnd[0]").sendVKey 0
-        SAPWait 100
+    Do While pickedCount < quantity
+        pickIcon = ""
+        On Error Resume Next
+        Set pickBtn = sapSession.findById(basePath & "btnRV50A-CHMULT[9," & pickRow & "]")
+        If Err.Number = 0 And Not pickBtn Is Nothing Then
+            pickIcon = Trim(pickBtn.IconName)
+        End If
+        Err.Clear
+        On Error GoTo HandleError
 
-        sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").SetFocus
-        SAPWait 100
-        sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").press
-        SAPWait WAIT_MEDIUM
-    Next j
+        ' If no more rows exist, exit loop
+        If pickBtn Is Nothing Then Exit Do
+
+        If Trim(pickIcon) <> "" Then
+            ' Row has active batch split icon - toggle, set qty, collapse
+            pickBtn.SetFocus
+            SAPWait 100
+            pickBtn.press
+            SAPWait WAIT_SHORT
+
+            sapSession.findById(basePath & "txtLIPSD-PIKMG[6,1]").Text = "1"
+            SAPWait 100
+            sapSession.findById("wnd[0]").sendVKey 0
+            SAPWait 100
+
+            sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").SetFocus
+            SAPWait 100
+            sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").press
+            SAPWait WAIT_MEDIUM
+
+            pickedCount = pickedCount + 1
+        End If
+
+        pickRow = pickRow + 1
+        If pickRow > 50 Then Exit Do
+    Loop
 
     sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
     SAPWait WAIT_MEDIUM
