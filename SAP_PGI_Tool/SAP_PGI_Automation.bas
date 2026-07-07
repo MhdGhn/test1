@@ -891,19 +891,43 @@ Private Function ProcessPartsPicking(sapSession As Object, _
         Dim currentSLoc As String
         deliveryQty = ""
         currentSLoc = ""
+
+        ' Use pick qty field as loop sentinel - confirmed working
         On Error Resume Next
-        deliveryQty = sapSession.findById(basePath & "txtLIPS-LFIMG[4," & rowIndex & "]").Text
+        sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").SetFocus
         If Err.Number <> 0 Then
             Err.Clear
             On Error GoTo HandleError
             Exit Do
         End If
+        Err.Clear
+
+        ' Try txtLIPS-LFIMG then txtLIPSD-LFIMG for delivery qty
+        deliveryQty = sapSession.findById(basePath & "txtLIPS-LFIMG[4," & rowIndex & "]").Text
+        If Err.Number <> 0 Or Trim(deliveryQty) = "" Then
+            Err.Clear
+            deliveryQty = sapSession.findById(basePath & "txtLIPSD-LFIMG[4," & rowIndex & "]").Text
+            If Err.Number <> 0 Then
+                Err.Clear
+                deliveryQty = ""
+            End If
+        End If
+
+        ' Read current SLoc
         currentSLoc = sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text
+        If Err.Number <> 0 Then
+            Err.Clear
+            currentSLoc = ""
+        End If
         On Error GoTo HandleError
+
         If Trim(currentSLoc) = "" Then
             sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = "A200"
         End If
-        sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").Text = deliveryQty
+        If Trim(deliveryQty) <> "" Then
+            sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").Text = deliveryQty
+        End If
+
         SAPWait 100
         rowIndex = rowIndex + 1
         lineCount = lineCount + 1
