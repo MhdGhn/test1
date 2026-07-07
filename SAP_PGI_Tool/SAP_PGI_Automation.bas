@@ -696,22 +696,11 @@ Public Sub RunConversionPicking()
 
         ElseIf category = "PART" Or category = "PARTS" Then
 
-            quantity = 0
-            If ws.Cells(i, COL_QUANTITY).Value <> "" Then
-                quantity = CInt(ws.Cells(i, COL_QUANTITY).Value)
-            End If
-
-            If quantity <= 0 Then
-                SetStatus ws, i, "ERROR - Enter Quantity in Column E", "RED"
-                errorCount = errorCount + 1
-                GoTo NextRowConvPick
-            End If
-
             SetStatus ws, i, "Picking...", "NONE"
             DoEvents
 
-            If ProcessPartsPicking(sapSession, delivery, quantity) Then
-                SetStatus ws, i, "Picked - OK (" & quantity & " parts)", "ORANGE"
+            If ProcessPartsPicking(sapSession, delivery) Then
+                SetStatus ws, i, "Picked - OK", "ORANGE"
                 doneCount = doneCount + 1
             Else
                 SetStatus ws, i, "ERROR - Check Manually", "RED"
@@ -870,8 +859,7 @@ End Function
 '  CORE: Parts Picking (storage A200, quantity from Column E)
 ' ============================================================
 Private Function ProcessPartsPicking(sapSession As Object, _
-                                      delivery As String, _
-                                      quantity As Integer) As Boolean
+                                      delivery As String) As Boolean
     On Error GoTo HandleError
 
     Dim statusBar As String
@@ -899,15 +887,18 @@ Private Function ProcessPartsPicking(sapSession As Object, _
     lineCount = 0
     rowIndex = 0
     Do
+        Dim deliveryQty As String
+        deliveryQty = ""
         On Error Resume Next
-        sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = "A200"
+        deliveryQty = sapSession.findById(basePath & "txtLIPS-LFIMG[5," & rowIndex & "]").Text
         If Err.Number <> 0 Then
             Err.Clear
             On Error GoTo HandleError
             Exit Do
         End If
-        sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").Text = CStr(quantity)
         On Error GoTo HandleError
+        sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = "A200"
+        sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").Text = deliveryQty
         SAPWait 100
         rowIndex = rowIndex + 1
         lineCount = lineCount + 1
