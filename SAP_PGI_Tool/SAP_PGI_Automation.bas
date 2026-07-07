@@ -1020,7 +1020,7 @@ Private Function ProcessMachinePicking(sapSession As Object, _
                 SAPWait WAIT_MEDIUM
             Else
                 ' Toggle expanded inline - check if sub-row actually has data
-                Dim subRowEl  As Object
+                Dim subRowEl   As Object
                 Dim hasSubData As Boolean
                 hasSubData = False
                 On Error Resume Next
@@ -1029,17 +1029,16 @@ Private Function ProcessMachinePicking(sapSession As Object, _
                 Err.Clear
                 On Error GoTo HandleError
 
-                ' Collapse the toggle regardless
-                sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").SetFocus
-                SAPWait 100
-                sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").press
-                SAPWait WAIT_SHORT
-
                 If Not hasSubData Then
-                    ' CASE C (empty): Toggle expanded but no serial data - go to ZVSER
+                    ' No serial data - go to ZVSER (skip collapse, ZVSER re-opens VL02N fresh)
                     needZVSER = True
+                Else
+                    ' Serials already assigned - collapse and pick directly
+                    sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").SetFocus
+                    SAPWait 100
+                    sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").press
+                    SAPWait WAIT_SHORT
                 End If
-                ' If hasSubData = True: CASE C confirmed, serials assigned, proceed to picking
             End If
         End If
     End If
