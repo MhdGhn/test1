@@ -54,6 +54,7 @@ Public Sub CreateDelivery()
 
     ws.Cells(nextRow, COL_DELIVERY).Value = CLng(newDelivery)
     ws.Range(SALES_ORDER_CELL).Value = ""
+    SetStatus ws, nextRow, "Picked - OK", "ORANGE"
 
     MsgBox "Delivery created successfully!" & vbNewLine & vbNewLine & _
            "Sales Order:     " & salesOrder & vbNewLine & _
