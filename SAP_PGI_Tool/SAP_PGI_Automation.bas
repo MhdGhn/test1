@@ -1437,11 +1437,8 @@ Public Sub RunOutboundDeliveryMonitor()
     sapSession.findById("wnd[0]/usr/ctxtIF_VSTEL-HIGH").Text = "A230"
 
     ' Clear both Planned Goods Movement Date fields
-    On Error Resume Next
-    sapSession.findById("wnd[0]/usr/ctxtEFDAT-LOW").Text = ""
-    sapSession.findById("wnd[0]/usr/ctxtEFDAT-HIGH").Text = ""
-    Err.Clear
-    On Error GoTo HandleError
+    sapSession.findById("wnd[0]/usr/ctxtIT_WADAT-LOW").Text = ""
+    sapSession.findById("wnd[0]/usr/ctxtIT_WADAT-HIGH").Text = ""
 
     sapSession.findById("wnd[0]/usr/ctxtIF_VSTEL-HIGH").SetFocus
     sapSession.findById("wnd[0]/usr/ctxtIF_VSTEL-HIGH").caretPosition = 4
