@@ -870,9 +870,6 @@ Private Function ProcessPartsPicking(sapSession As Object, _
     lineCount = 0
     rowIndex = 0
     Do
-        materialNum = ""
-        targetSLoc  = ""
-
         ' Loop sentinel
         On Error Resume Next
         sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").SetFocus
@@ -882,32 +879,25 @@ Private Function ProcessPartsPicking(sapSession As Object, _
             Exit Do
         End If
         Err.Clear
-
-        ' Read material number
-        materialNum = UCase(Trim(sapSession.findById(basePath & "txtLIPS-MATNR[1," & rowIndex & "]").Text))
-        If Err.Number <> 0 Then
-            Err.Clear
-            materialNum = ""
-        End If
         On Error GoTo HandleError
 
-        ' Determine SLoc based on material
-        Select Case materialNum
-            Case "A7001406", "85564100"
-                targetSLoc = "A200"
-            Case "A7701229"
-                targetSLoc = "A220"
-            Case Else
-                targetSLoc = "A200"
-        End Select
+        ' Row 2 (3rd line) = A7701229 → A220, all others → A200
+        If rowIndex = 2 Then
+            sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = "A220"
+        Else
+            sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = "A200"
+        End If
 
-        sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = targetSLoc
+        sapSession.findById("wnd[0]").sendVKey 0
+        SAPWait 100
 
         If quantity > 0 Then
             sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").Text = CStr(quantity)
         End If
 
+        sapSession.findById("wnd[0]").sendVKey 0
         SAPWait 100
+
         rowIndex = rowIndex + 1
         lineCount = lineCount + 1
     Loop
