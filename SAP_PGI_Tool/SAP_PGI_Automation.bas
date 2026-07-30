@@ -892,7 +892,7 @@ Private Function ProcessPartsPicking(sapSession As Object, _
         ' Set SLoc based on material number
         Select Case cleanMat
             Case "A7701229"
-                targetSLoc = "A220"
+                targetSLoc = "A2203"
             Case "A7001406", "85564100"
                 targetSLoc = "A200"
             Case Else
