@@ -669,10 +669,16 @@ Public Sub RunConversionPicking()
 
         ElseIf category = "PART" Or category = "PARTS" Then
 
+            Dim partsQty As Integer
+            partsQty = 0
+            If ws.Cells(i, COL_QUANTITY).Value <> "" Then
+                partsQty = CInt(ws.Cells(i, COL_QUANTITY).Value)
+            End If
+
             SetStatus ws, i, "Picking...", "NONE"
             DoEvents
 
-            If ProcessPartsPicking(sapSession, delivery) Then
+            If ProcessPartsPicking(sapSession, delivery, partsQty) Then
                 SetStatus ws, i, "Picked - OK", "ORANGE"
                 doneCount = doneCount + 1
             Else
@@ -833,15 +839,16 @@ End Function
 '  - Only sets A200 if storage location is empty
 ' ============================================================
 Private Function ProcessPartsPicking(sapSession As Object, _
-                                      delivery As String) As Boolean
+                                      delivery As String, _
+                                      quantity As Integer) As Boolean
     On Error GoTo HandleError
 
     Dim statusBar   As String
     Dim basePath    As String
     Dim rowIndex    As Integer
     Dim lineCount   As Integer
-    Dim deliveryQty As String
-    Dim currentSLoc As String
+    Dim materialNum As String
+    Dim targetSLoc  As String
 
     basePath = "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02/" & _
                "ssubSUBSCREEN_BODY:SAPMV50A:1104/tblSAPMV50ATC_LIPS_PICK/"
@@ -863,10 +870,10 @@ Private Function ProcessPartsPicking(sapSession As Object, _
     lineCount = 0
     rowIndex = 0
     Do
-        deliveryQty = ""
-        currentSLoc = ""
+        materialNum = ""
+        targetSLoc  = ""
 
-        ' Use pick qty field as loop sentinel - confirmed working
+        ' Loop sentinel
         On Error Resume Next
         sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").SetFocus
         If Err.Number <> 0 Then
@@ -876,30 +883,28 @@ Private Function ProcessPartsPicking(sapSession As Object, _
         End If
         Err.Clear
 
-        ' Try txtLIPS-LFIMG then txtLIPSD-LFIMG for delivery qty
-        deliveryQty = sapSession.findById(basePath & "txtLIPS-LFIMG[4," & rowIndex & "]").Text
-        If Err.Number <> 0 Or Trim(deliveryQty) = "" Then
-            Err.Clear
-            deliveryQty = sapSession.findById(basePath & "txtLIPSD-LFIMG[4," & rowIndex & "]").Text
-            If Err.Number <> 0 Then
-                Err.Clear
-                deliveryQty = ""
-            End If
-        End If
-
-        ' Read current SLoc
-        currentSLoc = sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text
+        ' Read material number
+        materialNum = UCase(Trim(sapSession.findById(basePath & "txtLIPS-MATNR[1," & rowIndex & "]").Text))
         If Err.Number <> 0 Then
             Err.Clear
-            currentSLoc = ""
+            materialNum = ""
         End If
         On Error GoTo HandleError
 
-        If Trim(currentSLoc) = "" Then
-            sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = "A200"
-        End If
-        If Trim(deliveryQty) <> "" Then
-            sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").Text = deliveryQty
+        ' Determine SLoc based on material
+        Select Case materialNum
+            Case "A7001406", "85564100"
+                targetSLoc = "A200"
+            Case "A7701229"
+                targetSLoc = "A220"
+            Case Else
+                targetSLoc = "A200"
+        End Select
+
+        sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = targetSLoc
+
+        If quantity > 0 Then
+            sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").Text = CStr(quantity)
         End If
 
         SAPWait 100
