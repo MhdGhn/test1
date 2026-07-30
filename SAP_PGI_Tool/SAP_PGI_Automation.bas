@@ -849,6 +849,7 @@ Private Function ProcessPartsPicking(sapSession As Object, _
     Dim lineCount   As Integer
     Dim materialNum As String
     Dim targetSLoc  As String
+    Dim cleanMat    As String
 
     basePath = "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02/" & _
                "ssubSUBSCREEN_BODY:SAPMV50A:1104/tblSAPMV50ATC_LIPS_PICK/"
@@ -879,15 +880,26 @@ Private Function ProcessPartsPicking(sapSession As Object, _
             Exit Do
         End If
         Err.Clear
+
+        ' Read material number
+        materialNum = ""
+        materialNum = sapSession.findById(basePath & "ctxtLIPS-MATNR[1," & rowIndex & "]").Text
+        If Err.Number <> 0 Then Err.Clear
         On Error GoTo HandleError
 
-        ' Row 2 (3rd line) = A7701229 → A220, all others → A200
-        If rowIndex = 2 Then
-            sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = "A220"
-        Else
-            sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = "A200"
-        End If
+        cleanMat = UCase(Trim(materialNum))
 
+        ' Set SLoc based on material number
+        Select Case cleanMat
+            Case "A7701229"
+                targetSLoc = "A220"
+            Case "A7001406", "85564100"
+                targetSLoc = "A200"
+            Case Else
+                targetSLoc = "A200"
+        End Select
+
+        sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = targetSLoc
         sapSession.findById("wnd[0]").sendVKey 0
         SAPWait 100
 
