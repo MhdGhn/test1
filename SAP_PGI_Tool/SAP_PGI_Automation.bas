@@ -888,6 +888,7 @@ Private Function ProcessPartsPicking(sapSession As Object, _
         On Error GoTo HandleError
 
         cleanMat = UCase(Trim(materialNum))
+        If cleanMat = "" Then Exit Do
 
         ' Set SLoc based on material number
         Select Case cleanMat
@@ -916,8 +917,6 @@ Private Function ProcessPartsPicking(sapSession As Object, _
 
     If lineCount = 0 Then GoTo HandleError
 
-    sapSession.findById("wnd[0]").sendVKey 0
-    SAPWait WAIT_SHORT
     sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
     SAPWait WAIT_MEDIUM
 
