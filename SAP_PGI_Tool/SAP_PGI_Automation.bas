@@ -949,15 +949,15 @@ Private Function ProcessMachinePicking(sapSession As Object, _
                                         quantity As Integer) As Boolean
     On Error GoTo HandleError
 
-    Dim statusBar  As String
-    Dim j          As Integer
-    Dim basePath   As String
-    Dim btnExists  As Boolean
-    Dim needZVSER  As Boolean
-    Dim wndTitle   As String
-    Dim testBtn    As Object
-    Dim stillOnTab As Boolean
-    Dim tabEl      As Object
+    Dim statusBar   As String
+    Dim j           As Integer
+    Dim basePath    As String
+    Dim btnExists   As Boolean
+    Dim testBtn     As Object
+    Dim pickRow     As Integer
+    Dim pickedCount As Integer
+    Dim pickBtn     As Object
+    Dim pickIcon    As String
 
     basePath = "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02/" & _
                "ssubSUBSCREEN_BODY:SAPMV50A:1104/tblSAPMV50ATC_LIPS_PICK/"
@@ -975,7 +975,7 @@ Private Function ProcessMachinePicking(sapSession As Object, _
     sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02").Select
     SAPWait WAIT_SHORT
 
-    ' Check if batch split toggle button exists
+    ' Check if "+" batch split icon is active on row 0
     btnExists = False
     On Error Resume Next
     Set testBtn = sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]")
@@ -988,80 +988,8 @@ Private Function ProcessMachinePicking(sapSession As Object, _
     Err.Clear
     On Error GoTo HandleError
 
-    needZVSER = False
-
     If Not btnExists Then
-        ' CASE A: No toggle button - go straight to ZVSER
-        needZVSER = True
-
-    Else
-        ' Toggle exists - press it to see what happens
-        testBtn.SetFocus
-        SAPWait 100
-        testBtn.press
-        SAPWait WAIT_SHORT
-
-        ' Check 1: Did a popup window appear?
-        On Error Resume Next
-        wndTitle = sapSession.findById("wnd[1]").Text
-        If Err.Number = 0 Then
-            needZVSER = True
-            sapSession.findById("wnd[1]/tbar[0]/btn[12]").press
-            SAPWait WAIT_SHORT
-            sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
-            SAPWait WAIT_MEDIUM
-        End If
-        Err.Clear
-        On Error GoTo HandleError
-
-        If Not needZVSER Then
-            ' Check 2: Are we still on the picking tab table?
-            stillOnTab = False
-            On Error Resume Next
-            Set tabEl = sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]")
-            If Err.Number = 0 And Not tabEl Is Nothing Then stillOnTab = True
-            Err.Clear
-            On Error GoTo HandleError
-
-            If Not stillOnTab Then
-                ' CASE B: Toggle navigated to a sub-screen - two btn[3] back
-                needZVSER = True
-                sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
-                SAPWait WAIT_SHORT
-                sapSession.findById("wnd[0]/tbar[0]/btn[3]").press
-                SAPWait WAIT_MEDIUM
-            Else
-                ' Toggle expanded inline - check if sub-row actually has data
-                Dim subRowEl   As Object
-                Dim hasSubData As Boolean
-                Dim subRowVal  As String
-                hasSubData = False
-                subRowVal = ""
-                On Error Resume Next
-                Set subRowEl = sapSession.findById(basePath & "txtLIPSD-PIKMG[6,1]")
-                If Err.Number = 0 And Not subRowEl Is Nothing Then
-                    subRowVal = Trim(subRowEl.Text)
-                    If subRowVal <> "" And subRowVal <> "0" Then hasSubData = True
-                End If
-                Err.Clear
-                On Error GoTo HandleError
-
-                If Not hasSubData Then
-                    ' No serial data - go to ZVSER (skip collapse, ZVSER re-opens VL02N fresh)
-                    needZVSER = True
-                Else
-                    ' Serials already assigned - collapse and pick directly
-                    sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").SetFocus
-                    SAPWait 100
-                    sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").press
-                    SAPWait WAIT_SHORT
-                End If
-            End If
-        End If
-    End If
-
-    ' ZVSER: Assign serial numbers (Cases A and B only)
-    If needZVSER Then
+        ' No "+" icon - serials not assigned yet, go to ZVSER first
         sapSession.StartTransaction "ZVSER"
         SAPWait WAIT_MEDIUM
 
@@ -1071,7 +999,6 @@ Private Function ProcessMachinePicking(sapSession As Object, _
         sapSession.findById("wnd[0]/tbar[1]/btn[8]").press
         SAPWait WAIT_MEDIUM
 
-        ' For each machine: select all, open Batch Split popup, assign serial
         For j = 1 To quantity
             sapSession.findById("wnd[0]/usr/btnTC_LIPS_MARK").press
             SAPWait WAIT_SHORT
@@ -1088,7 +1015,7 @@ Private Function ProcessMachinePicking(sapSession As Object, _
             SAPWait WAIT_MEDIUM
         Next j
 
-        ' Exit ZVSER - three btn[12] presses back to Easy Access
+        ' Exit ZVSER back to Easy Access
         sapSession.findById("wnd[0]/tbar[0]/btn[12]").press
         SAPWait WAIT_SHORT
         sapSession.findById("wnd[0]/tbar[0]/btn[12]").press
@@ -1096,7 +1023,7 @@ Private Function ProcessMachinePicking(sapSession As Object, _
         sapSession.findById("wnd[0]/tbar[0]/btn[12]").press
         SAPWait WAIT_MEDIUM
 
-        ' Re-open VL02N ready for picking
+        ' Re-open VL02N picking tab
         sapSession.StartTransaction "VL02N"
         SAPWait WAIT_MEDIUM
         sapSession.findById("wnd[0]/usr/ctxtLIKP-VBELN").Text = delivery
@@ -1106,11 +1033,8 @@ Private Function ProcessMachinePicking(sapSession As Object, _
         SAPWait WAIT_SHORT
     End If
 
-    ' Picking loop - only process rows that have the active batch split icon
-    Dim pickRow    As Integer
-    Dim pickedCount As Integer
-    Dim pickBtn    As Object
-    Dim pickIcon   As String
+    ' Picking loop - "+" icon exists (or now exists after ZVSER)
+    ' For each machine row: expand sub-row, set qty to 1, collapse
     pickRow = 0
     pickedCount = 0
 
@@ -1124,23 +1048,22 @@ Private Function ProcessMachinePicking(sapSession As Object, _
         Err.Clear
         On Error GoTo HandleError
 
-        ' If no more rows exist, exit loop
         If pickBtn Is Nothing Then Exit Do
 
         If Trim(pickIcon) <> "" Then
-            ' Row has active batch split icon - toggle, set qty, collapse
+            ' Expand sub-row
             pickBtn.SetFocus
             SAPWait 100
             pickBtn.press
-            SAPWait WAIT_SHORT
+            SAPWait WAIT_MEDIUM
 
-            ' Sub-row is always at pickRow + 1 after expansion
+            ' Set pick quantity to 1 in the sub-row
             sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & (pickRow + 1) & "]").Text = "1"
             SAPWait 100
             sapSession.findById("wnd[0]").sendVKey 0
             SAPWait 100
 
-            ' Collapse the same row we expanded
+            ' Collapse the sub-row
             sapSession.findById(basePath & "btnRV50A-CHMULT[9," & pickRow & "]").SetFocus
             SAPWait 100
             sapSession.findById(basePath & "btnRV50A-CHMULT[9," & pickRow & "]").press
