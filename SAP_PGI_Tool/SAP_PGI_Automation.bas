@@ -19,12 +19,13 @@ Private Const WAIT_MEDIUM       As Long = 800
 '  CREATE DELIVERY FROM SALES ORDER
 ' ============================================================
 Public Sub CreateDelivery()
-    Dim ws          As Worksheet
-    Dim sapSession  As Object
-    Dim salesOrder  As String
-    Dim newDelivery As String
-    Dim nextRow     As Long
-    Dim lastRow     As Long
+    Dim ws               As Worksheet
+    Dim sapSession       As Object
+    Dim salesOrder       As String
+    Dim newDelivery      As String
+    Dim nextRow          As Long
+    Dim lastRow          As Long
+    Dim detectedCategory As String
 
     Set ws = ThisWorkbook.Sheets(SHEET_NAME)
     salesOrder = Trim(CStr(ws.Range(SALES_ORDER_CELL).Value))
@@ -52,14 +53,18 @@ Public Sub CreateDelivery()
     nextRow = lastRow + 1
     If lastRow < DATA_START_ROW Then nextRow = DATA_START_ROW
 
+    ' Detect category from delivery material
+    detectedCategory = DetectCategory(sapSession, newDelivery)
+
     ws.Cells(nextRow, COL_DELIVERY).Value = CLng(newDelivery)
+    ws.Cells(nextRow, COL_CATEGORY).Value = detectedCategory
     ws.Range(SALES_ORDER_CELL).Value = ""
-    SetStatus ws, nextRow, "Picked - OK", "ORANGE"
 
     MsgBox "Delivery created successfully!" & vbNewLine & vbNewLine & _
            "Sales Order:     " & salesOrder & vbNewLine & _
-           "New Delivery:    " & newDelivery & vbNewLine & vbNewLine & _
-           "Delivery number added to row " & nextRow & " in Column A.", _
+           "New Delivery:    " & newDelivery & vbNewLine & _
+           "Category:        " & detectedCategory & vbNewLine & vbNewLine & _
+           "Ready for picking when needed.", _
            vbInformation, "Delivery Created"
 
     ws.Cells(nextRow, COL_TRACKING).Select
@@ -1193,6 +1198,57 @@ Private Function ProcessMachine(sapSession As Object, _
 
 HandleError:
     ProcessMachine = False
+End Function
+
+' ============================================================
+'  HELPER: Detect category from delivery material number
+'  PARTS:      A7001406 / 85564100 / A7701229
+'  MACHINE:    PEAKDUAL27 / PEAKCURVE49
+'  CONVERSION: ANZ_CNV
+' ============================================================
+Private Function DetectCategory(sapSession As Object, delivery As String) As String
+    On Error GoTo HandleError
+
+    Dim basePath    As String
+    Dim materialNum As String
+    Dim cleanMat    As String
+
+    basePath = "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02/" & _
+               "ssubSUBSCREEN_BODY:SAPMV50A:1104/tblSAPMV50ATC_LIPS_PICK/"
+
+    sapSession.StartTransaction "VL02N"
+    SAPWait WAIT_MEDIUM
+    sapSession.findById("wnd[0]/usr/ctxtLIKP-VBELN").Text = delivery
+    sapSession.findById("wnd[0]").sendVKey 0
+    SAPWait WAIT_MEDIUM
+
+    sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02").Select
+    SAPWait WAIT_SHORT
+
+    materialNum = ""
+    On Error Resume Next
+    materialNum = sapSession.findById(basePath & "ctxtLIPS-MATNR[1,0]").Text
+    Err.Clear
+    On Error GoTo HandleError
+
+    cleanMat = UCase(Trim(materialNum))
+
+    Select Case cleanMat
+        Case "A7001406", "85564100", "A7701229"
+            DetectCategory = "PARTS"
+        Case "PEAKDUAL27", "PEAKCURVE49"
+            DetectCategory = "MACHINE"
+        Case "ANZ_CNV"
+            DetectCategory = "CONVERSION"
+        Case Else
+            DetectCategory = ""
+    End Select
+
+    Exit Function
+
+HandleError:
+    On Error Resume Next
+    DetectCategory = ""
 End Function
 
 ' ============================================================
