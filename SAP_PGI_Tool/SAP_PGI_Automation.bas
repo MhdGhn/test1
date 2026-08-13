@@ -623,6 +623,84 @@ NextRowMachine:
 End Sub
 
 ' ============================================================
+'  RUN MIXED PGI - Mixed deliveries (machines + conversion/parts)
+'  Quantity column (E) = number of machine lines in the delivery
+' ============================================================
+Public Sub RunMixedPGI()
+    Dim ws         As Worksheet
+    Dim sapSession As Object
+    Dim lastRow    As Long
+    Dim i          As Long
+    Dim delivery   As String
+    Dim tracking   As String
+    Dim category   As String
+    Dim quantity   As Integer
+    Dim doneCount  As Integer
+    Dim errorCount As Integer
+    Dim skipCount  As Integer
+
+    Set ws = ThisWorkbook.Sheets(SHEET_NAME)
+    lastRow = ws.Cells(ws.Rows.Count, COL_DELIVERY).End(xlUp).Row
+
+    If lastRow < DATA_START_ROW Then
+        MsgBox "No deliveries found.", vbInformation, "No Data"
+        Exit Sub
+    End If
+
+    Set sapSession = GetSAPSession()
+    If sapSession Is Nothing Then Exit Sub
+
+    If MsgBox("Start PGI for Mixed deliveries now?" & vbNewLine & _
+              "(Quantity column = number of machine lines)", _
+              vbYesNo + vbQuestion, "Confirm Start") = vbNo Then Exit Sub
+
+    doneCount = 0: errorCount = 0: skipCount = 0
+
+    For i = DATA_START_ROW To lastRow
+        delivery = Trim(CStr(ws.Cells(i, COL_DELIVERY).Value))
+        tracking  = Trim(CStr(ws.Cells(i, COL_TRACKING).Value))
+        category  = UCase(Trim(CStr(ws.Cells(i, COL_CATEGORY).Value)))
+
+        If delivery = "" Then GoTo NextRowMixedPGI
+        If InStr(ws.Cells(i, COL_STATUS).Value, "Done") > 0 Then GoTo NextRowMixedPGI
+
+        If category <> "MIXED" Then
+            skipCount = skipCount + 1
+            GoTo NextRowMixedPGI
+        End If
+
+        quantity = 0
+        If ws.Cells(i, COL_QUANTITY).Value <> "" Then
+            quantity = CInt(ws.Cells(i, COL_QUANTITY).Value)
+        End If
+
+        If quantity <= 0 Then
+            SetStatus ws, i, "ERROR - Enter machine quantity in Column E", "RED"
+            errorCount = errorCount + 1
+            GoTo NextRowMixedPGI
+        End If
+
+        SetStatus ws, i, "Processing...", "NONE"
+        DoEvents
+
+        If ProcessMachine(sapSession, delivery, tracking, quantity) Then
+            SetStatus ws, i, "Done - PGI Posted (" & quantity & " machines)", "GREEN"
+            doneCount = doneCount + 1
+        Else
+            SetStatus ws, i, "ERROR - Check Manually", "RED"
+            errorCount = errorCount + 1
+        End If
+
+NextRowMixedPGI:
+    Next i
+
+    MsgBox "Mixed PGI Complete!" & vbNewLine & vbNewLine & _
+           "Done:    " & doneCount & vbNewLine & _
+           "Errors:  " & errorCount & vbNewLine & _
+           "Skipped: " & skipCount, vbInformation, "Process Complete"
+End Sub
+
+' ============================================================
 '  RUN PICKING - Conversion & Parts
 ' ============================================================
 Public Sub RunConversionPicking()
@@ -1629,17 +1707,18 @@ Sub AlignButtons()
 
     Set ws = ThisWorkbook.Sheets("Deliveries")
 
-    Dim btnOrder(9) As String
-    btnOrder(0) = "IMPORT DELIVERY (from PDF)"
-    btnOrder(1) = "RUN PICKING  (Conversion)"
-    btnOrder(2) = "RUN PICKING  (Machines)"
-    btnOrder(3) = "IMPORT TRACKING (from web)"
-    btnOrder(4) = "RUN PGI  (Conversion & Parts)"
-    btnOrder(5) = "RUN PGI  (Machines)"
-    btnOrder(6) = "RESET TEMPLATE"
-    btnOrder(7) = "UNDO RESET"
-    btnOrder(8) = "Create Delivery number"
-    btnOrder(9) = "OUTBOUND DELIVERY MONITOR"
+    Dim btnOrder(10) As String
+    btnOrder(0)  = "IMPORT DELIVERY (from PDF)"
+    btnOrder(1)  = "RUN PICKING  (Conversion)"
+    btnOrder(2)  = "RUN PICKING  (Machines)"
+    btnOrder(3)  = "IMPORT TRACKING (from web)"
+    btnOrder(4)  = "RUN PGI  (Conversion & Parts)"
+    btnOrder(5)  = "RUN PGI  (Machines)"
+    btnOrder(6)  = "RUN PGI  (Mixed)"
+    btnOrder(7)  = "RESET TEMPLATE"
+    btnOrder(8)  = "UNDO RESET"
+    btnOrder(9)  = "Create Delivery number"
+    btnOrder(10) = "OUTBOUND DELIVERY MONITOR"
 
     btnLeft = ws.Columns("H").Left + 5
     btnWidth = 180
@@ -1648,7 +1727,7 @@ Sub AlignButtons()
     gap = 10
     placed = 0
 
-    For j = 0 To 9
+    For j = 0 To 10
         For Each btn In ws.Buttons
             If Trim(btn.Caption) = Trim(btnOrder(j)) Then
                 btn.Left = btnLeft
