@@ -705,6 +705,271 @@ NextRowConvPick:
 End Sub
 
 ' ============================================================
+'  RUN PICKING - Mixed (auto-detects line types from SAP)
+' ============================================================
+Public Sub RunMixedPicking()
+    Dim ws         As Worksheet
+    Dim sapSession As Object
+    Dim lastRow    As Long
+    Dim i          As Long
+    Dim delivery   As String
+    Dim category   As String
+    Dim quantity   As Integer
+    Dim doneCount  As Integer
+    Dim errorCount As Integer
+    Dim skipCount  As Integer
+
+    Set ws = ThisWorkbook.Sheets(SHEET_NAME)
+    lastRow = ws.Cells(ws.Rows.Count, COL_DELIVERY).End(xlUp).Row
+
+    If lastRow < DATA_START_ROW Then
+        MsgBox "No deliveries found.", vbInformation, "No Data"
+        Exit Sub
+    End If
+
+    Set sapSession = GetSAPSession()
+    If sapSession Is Nothing Then Exit Sub
+
+    If MsgBox("Start Picking for Mixed deliveries now?", _
+              vbYesNo + vbQuestion, "Confirm Start") = vbNo Then Exit Sub
+
+    doneCount = 0: errorCount = 0: skipCount = 0
+
+    For i = DATA_START_ROW To lastRow
+        delivery = Trim(CStr(ws.Cells(i, COL_DELIVERY).Value))
+        category = UCase(Trim(CStr(ws.Cells(i, COL_CATEGORY).Value)))
+
+        If delivery = "" Then GoTo NextRowMixedPick
+        If InStr(ws.Cells(i, COL_STATUS).Value, "Picked") > 0 Then GoTo NextRowMixedPick
+
+        If category <> "MIXED" Then
+            skipCount = skipCount + 1
+            GoTo NextRowMixedPick
+        End If
+
+        quantity = 0
+        If ws.Cells(i, COL_QUANTITY).Value <> "" Then
+            quantity = CInt(ws.Cells(i, COL_QUANTITY).Value)
+        End If
+
+        SetStatus ws, i, "Picking...", "NONE"
+        DoEvents
+
+        If ProcessMixedPicking(sapSession, delivery, quantity) Then
+            SetStatus ws, i, "Picked - OK", "ORANGE"
+            doneCount = doneCount + 1
+        Else
+            SetStatus ws, i, "ERROR - Check Manually", "RED"
+            errorCount = errorCount + 1
+        End If
+
+NextRowMixedPick:
+    Next i
+
+    MsgBox "Mixed Picking Complete!" & vbNewLine & vbNewLine & _
+           "Done:    " & doneCount & vbNewLine & _
+           "Errors:  " & errorCount & vbNewLine & _
+           "Skipped: " & skipCount, vbInformation, "Process Complete"
+End Sub
+
+' ============================================================
+'  CORE: Mixed Picking
+'  Reads each line material from SAP and applies correct method:
+'  PEAKDUAL27/PEAKCURVE49 -> machine (batch split)
+'  ANZ_CNV               -> conversion (qty = 1)
+'  A7001406/85564100     -> parts (SLoc A200)
+'  A7701229              -> parts (SLoc A220)
+' ============================================================
+Private Function ProcessMixedPicking(sapSession As Object, _
+                                      delivery As String, _
+                                      quantity As Integer) As Boolean
+    On Error GoTo HandleError
+
+    Dim statusBar    As String
+    Dim basePath     As String
+    Dim rowIndex     As Integer
+    Dim materialNum  As String
+    Dim cleanMat     As String
+    Dim machineCount As Integer
+    Dim btnExists    As Boolean
+    Dim testBtn      As Object
+    Dim bIcon        As String
+    Dim j            As Integer
+    Dim pickBtn      As Object
+    Dim pickIcon     As String
+
+    basePath = "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02/" & _
+               "ssubSUBSCREEN_BODY:SAPMV50A:1104/tblSAPMV50ATC_LIPS_PICK/"
+
+    ' Step 1: Open VL02N
+    sapSession.StartTransaction "VL02N"
+    SAPWait WAIT_MEDIUM
+    sapSession.findById("wnd[0]/usr/ctxtLIKP-VBELN").Text = delivery
+    sapSession.findById("wnd[0]").sendVKey 0
+    SAPWait WAIT_MEDIUM
+
+    statusBar = sapSession.findById("wnd[0]/sbar").Text
+    If InStr(LCase(statusBar), "does not exist") > 0 Or _
+       InStr(LCase(statusBar), "not found") > 0 Then GoTo HandleError
+
+    sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02").Select
+    SAPWait WAIT_SHORT
+
+    ' Step 2: Count machine lines
+    machineCount = 0
+    rowIndex = 0
+    Do
+        On Error Resume Next
+        sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").SetFocus
+        If Err.Number <> 0 Then Err.Clear: On Error GoTo HandleError: Exit Do
+        Err.Clear
+        materialNum = ""
+        materialNum = sapSession.findById(basePath & "ctxtLIPS-MATNR[1," & rowIndex & "]").Text
+        If Err.Number <> 0 Then Err.Clear
+        On Error GoTo HandleError
+        cleanMat = UCase(Trim(materialNum))
+        If cleanMat = "" Then Exit Do
+        If cleanMat = "PEAKDUAL27" Or cleanMat = "PEAKCURVE49" Then
+            machineCount = machineCount + 1
+        End If
+        rowIndex = rowIndex + 1
+    Loop
+
+    ' Step 3: If machines exist with no "+" icon, go to ZVSER first
+    If machineCount > 0 Then
+        btnExists = False
+        On Error Resume Next
+        Set testBtn = sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]")
+        If Err.Number = 0 And Not testBtn Is Nothing Then
+            bIcon = ""
+            bIcon = testBtn.IconName
+            If Err.Number = 0 And Trim(bIcon) <> "" Then btnExists = True
+        End If
+        Err.Clear
+        On Error GoTo HandleError
+
+        If Not btnExists Then
+            sapSession.StartTransaction "ZVSER"
+            SAPWait WAIT_MEDIUM
+            sapSession.findById("wnd[0]/usr/ctxtIT_VBELN-LOW").Text = delivery
+            sapSession.findById("wnd[0]/usr/ctxtIT_VBELN-LOW").SetFocus
+            SAPWait 100
+            sapSession.findById("wnd[0]/tbar[1]/btn[8]").press
+            SAPWait WAIT_MEDIUM
+
+            For j = 1 To machineCount
+                SAPWait WAIT_MEDIUM
+                sapSession.findById("wnd[0]/usr/btnTC_LIPS_MARK").press
+                SAPWait WAIT_MEDIUM
+                sapSession.findById("wnd[0]/tbar[1]/btn[5]").press
+                SAPWait 1500
+                On Error Resume Next
+                sapSession.findById("wnd[1]/usr/tblZSDE_BATCH_SPLIT_FOR_DELIVERYTC_OBJKA") _
+                    .getAbsoluteRow(0).Selected = True
+                SAPWait 100
+                sapSession.findById("wnd[1]/usr/tblZSDE_BATCH_SPLIT_FOR_DELIVERYTC_OBJKA/" & _
+                                    "txtI_OBJKA-SERNR[0,0]").SetFocus
+                SAPWait 100
+                sapSession.findById("wnd[1]/tbar[0]/btn[5]").press
+                Err.Clear
+                On Error GoTo HandleError
+                SAPWait 1500
+            Next j
+
+            sapSession.findById("wnd[0]/tbar[0]/btn[12]").press: SAPWait WAIT_SHORT
+            sapSession.findById("wnd[0]/tbar[0]/btn[12]").press: SAPWait WAIT_SHORT
+            sapSession.findById("wnd[0]/tbar[0]/btn[12]").press: SAPWait WAIT_MEDIUM
+
+            sapSession.StartTransaction "VL02N"
+            SAPWait WAIT_MEDIUM
+            sapSession.findById("wnd[0]/usr/ctxtLIKP-VBELN").Text = delivery
+            sapSession.findById("wnd[0]").sendVKey 0
+            SAPWait WAIT_MEDIUM
+            sapSession.findById("wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tabpT\02").Select
+            SAPWait WAIT_SHORT
+        End If
+    End If
+
+    ' Step 4: Pick all lines based on material
+    rowIndex = 0
+    Do
+        On Error Resume Next
+        sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").SetFocus
+        If Err.Number <> 0 Then Err.Clear: On Error GoTo HandleError: Exit Do
+        Err.Clear
+        materialNum = ""
+        materialNum = sapSession.findById(basePath & "ctxtLIPS-MATNR[1," & rowIndex & "]").Text
+        If Err.Number <> 0 Then Err.Clear
+        On Error GoTo HandleError
+        cleanMat = UCase(Trim(materialNum))
+        If cleanMat = "" Then Exit Do
+
+        Select Case cleanMat
+
+            Case "PEAKDUAL27", "PEAKCURVE49"
+                ' Machine - expand batch split, set qty 1, collapse
+                pickIcon = ""
+                On Error Resume Next
+                Set pickBtn = sapSession.findById(basePath & "btnRV50A-CHMULT[9," & rowIndex & "]")
+                If Err.Number = 0 And Not pickBtn Is Nothing Then
+                    pickIcon = Trim(pickBtn.IconName)
+                End If
+                Err.Clear
+                On Error GoTo HandleError
+                If Trim(pickIcon) <> "" Then
+                    pickBtn.SetFocus: SAPWait 100
+                    pickBtn.press: SAPWait WAIT_MEDIUM
+                    sapSession.findById(basePath & "txtLIPSD-PIKMG[6,1]").Text = "1"
+                    SAPWait 100
+                    sapSession.findById("wnd[0]").sendVKey 0: SAPWait 100
+                    sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").SetFocus: SAPWait 100
+                    sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").press: SAPWait WAIT_MEDIUM
+                End If
+
+            Case "ANZ_CNV"
+                ' Conversion - set qty to 1
+                sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").Text = "1"
+                sapSession.findById("wnd[0]").sendVKey 0: SAPWait 100
+
+            Case "A7001406", "85564100"
+                ' Parts - SLoc A200
+                sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = "A200"
+                sapSession.findById("wnd[0]").sendVKey 0: SAPWait 100
+                If quantity > 0 Then
+                    sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").Text = CStr(quantity)
+                    sapSession.findById("wnd[0]").sendVKey 0: SAPWait 100
+                End If
+
+            Case "A7701229"
+                ' Parts - SLoc A220
+                sapSession.findById(basePath & "ctxtLIPS-LGORT[3," & rowIndex & "]").Text = "A220"
+                sapSession.findById("wnd[0]").sendVKey 0: SAPWait 100
+                If quantity > 0 Then
+                    sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").Text = CStr(quantity)
+                    sapSession.findById("wnd[0]").sendVKey 0: SAPWait 100
+                End If
+
+        End Select
+
+        rowIndex = rowIndex + 1
+    Loop
+
+    ' Step 5: Save
+    sapSession.findById("wnd[0]/tbar[0]/btn[11]").press
+    SAPWait WAIT_MEDIUM
+
+    statusBar = sapSession.findById("wnd[0]/sbar").Text
+    If InStr(LCase(statusBar), "error") > 0 Then GoTo HandleError
+
+    ProcessMixedPicking = True
+    Exit Function
+
+HandleError:
+    On Error Resume Next
+    ProcessMixedPicking = False
+End Function
+
+' ============================================================
 '  RUN PICKING - Machines only
 ' ============================================================
 Public Sub RunMachinePicking()
