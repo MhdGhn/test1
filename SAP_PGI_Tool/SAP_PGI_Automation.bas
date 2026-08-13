@@ -926,10 +926,13 @@ Private Function ProcessMixedPicking(sapSession As Object, _
                     sapSession.findById(basePath & "btnRV50A-CHMULT[9,0]").press: SAPWait WAIT_MEDIUM
                 End If
 
-            Case "ANZ_CNV"
+            Case "ANZ_CNV", "ANZ_MISC"
                 ' Conversion - set qty to 1
                 sapSession.findById(basePath & "txtLIPSD-PIKMG[6," & rowIndex & "]").Text = "1"
                 sapSession.findById("wnd[0]").sendVKey 0: SAPWait 100
+
+            Case "TRADE-IN RETURN"
+                ' Trade-in lines do not need picking - skip
 
             Case "A7001406", "85564100"
                 ' Parts - SLoc A200
